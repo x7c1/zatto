@@ -1,0 +1,63 @@
+{
+  "name": "zatto",
+  "version": "0.0.1",
+  "description": "GNOME Shell extension for picking windows grouped into per-app screen zones",
+  "main": "extension.js",
+  "scripts": {
+    "build": "tsc --build && node esbuild.config.js",
+    "build:release": "BUILD_MODE=release tsc --build && BUILD_MODE=release node esbuild.config.js",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "check": "biome check --write .",
+    "check:strict": "biome check --error-on-warnings .",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/x7c1/zatto.git"
+  },
+  "keywords": [
+    "gnome-shell-extension",
+    "window-picker",
+    "window-management"
+  ],
+  "author": "x7c1",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/x7c1/zatto/issues"
+  },
+  "homepage": "https://github.com/x7c1/zatto#readme",
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.11",
+    "@girs/adw-1": "1.10.0-4.0.0-rc.15",
+    "@girs/clutter-18": "18.0.0-4.0.0-rc.15",
+    "@girs/gdk-4.0": "4.0.0-4.0.0-rc.15",
+    "@girs/gjs": "4.0.0-rc.15",
+    "@girs/gnome-shell": "50.0.0",
+    "@girs/gtk-4.0": "4.23.0-4.0.0-rc.15",
+    "@girs/meta-18": "18.0.0-4.0.0-rc.15",
+    "@girs/mtk-18": "18.0.0-4.0.0-rc.15",
+    "@girs/st-18": "18.0.0-4.0.0-rc.15",
+    "esbuild": "^0.27.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.14"
+  },
+  "overrides": {
+    "@girs/clutter-18": "18.0.0-4.0.0-rc.15",
+    "@girs/cogl-2.0": "2.0.0-4.0.0-rc.15",
+    "@girs/meta-18": "18.0.0-4.0.0-rc.15",
+    "@girs/mtk-18": "18.0.0-4.0.0-rc.15",
+    "@girs/shell-18": "18.0.0-4.0.0-rc.15",
+    "@girs/st-18": "18.0.0-4.0.0-rc.15",
+    "@girs/gio-2.0": "2.88.0-4.0.0-rc.15",
+    "@girs/gjs": "4.0.0-rc.15",
+    "@girs/cairo-1.0": "1.0.0-4.0.0-rc.15",
+    "@girs/glib-2.0": "2.88.0-4.0.0-rc.15",
+    "@girs/gobject-2.0": "2.88.0-4.0.0-rc.15",
+    "@girs/gmodule-2.0": "2.0.0-4.0.0-rc.15",
+    "@girs/freetype2-2.0": "2.0.0-4.0.0-rc.15",
+    "@girs/graphene-1.0": "1.0.0-4.0.0-rc.15"
+  }
+}

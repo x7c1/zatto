@@ -1,0 +1,10 @@
+{
+  "uuid": "zatto@x7c1.github.io",
+  "name": "Zatto",
+  "description": "GNOME Shell extension for picking windows grouped into per-app screen zones",
+  "shell-version": [
+    "50"
+  ],
+  "url": "https://github.com/x7c1/zatto",
+  "version": 1
+}
