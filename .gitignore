@@ -2,5 +2,40 @@
 .DS_Store
 *.log
 
+# Logs
+npm-debug.log*
+
 # Node
 node_modules/
+
+# TypeScript build info
+*.tsbuildinfo
+.tsc/
+
+# TypeScript generated files (project references emit alongside sources)
+src/**/*.d.ts
+src/**/*.d.ts.map
+src/**/*.js
+src/**/*.js.map
+
+# Exception: hand-written ambient type stubs for the GNOME Shell runtime
+!src/gnome-shell-ambient.d.ts
+
+# Build artifacts in dist/ — keep metadata.json checked in
+dist/*
+!dist/metadata.json
+dist/*.zip
+
+# Local files
+*.local
+*.tmp
+*.bak
+
+# Agent / scratch
+.tmp/
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.swp
