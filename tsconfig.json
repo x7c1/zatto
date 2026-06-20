@@ -21,6 +21,12 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/extension.ts", "src/gnome-shell-ambient.d.ts"],
+  "include": [
+    "src/extension.ts",
+    "src/gnome-shell-ambient.d.ts",
+    "src/build-mode.d.ts",
+    "src/infra/**/*.ts",
+    "src/libs/**/*.ts"
+  ],
   "exclude": ["node_modules", "dist", ".tsc", "**/*.test.ts"]
 }

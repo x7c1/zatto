@@ -6,6 +6,9 @@
   "scripts": {
     "build": "tsc --build && node esbuild.config.js",
     "build:release": "BUILD_MODE=release tsc --build && BUILD_MODE=release node esbuild.config.js",
+    "copy-files": "./scripts/copy-files.sh",
+    "reload": "gdbus call --session --dest org.gnome.Shell --object-path /io/github/x7c1/Zatto --method io.github.x7c1.Zatto.Reload",
+    "dev": "npm run build && npm run copy-files && npm run reload",
     "lint": "biome lint .",
     "format": "biome format --write .",
     "check": "biome check --write .",
