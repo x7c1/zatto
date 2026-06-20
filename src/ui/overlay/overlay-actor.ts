@@ -13,6 +13,7 @@ import Clutter from 'gi://Clutter';
 import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { safeAddChrome } from '../../libs/shell/safe-add-chrome.js';
+import type { OverlayActorPort } from './ports.js';
 
 const CARD_WIDTH = 400;
 const CARD_HEIGHT = 300;
@@ -27,9 +28,10 @@ const CARD_STYLE = [
   'padding: 24px;',
 ].join(' ');
 
-export class OverlayActor {
+export class OverlayActor implements OverlayActorPort {
   private dimmer: St.Widget | null = null;
   private mounted = false;
+  private visible = false;
 
   /** Mount the dimmer to the Shell chrome (hidden until `show()` is called). */
   mount(): void {
@@ -78,6 +80,7 @@ export class OverlayActor {
       return;
     }
     this.dimmer.show();
+    this.visible = true;
   }
 
   hide(): void {
@@ -85,6 +88,11 @@ export class OverlayActor {
       return;
     }
     this.dimmer.hide();
+    this.visible = false;
+  }
+
+  isVisible(): boolean {
+    return this.visible;
   }
 
   /** The reactive actor used as the modal grab target. */
@@ -100,5 +108,6 @@ export class OverlayActor {
       this.dimmer = null;
     }
     this.mounted = false;
+    this.visible = false;
   }
 }

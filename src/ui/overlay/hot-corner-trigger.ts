@@ -24,14 +24,19 @@ import Clutter from 'gi://Clutter';
 import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { safeAddChrome } from '../../libs/shell/safe-add-chrome.js';
+import type { HotCornerPort } from './ports.js';
 
 const TRIGGER_SIZE = 5;
 
-export class HotCornerTrigger {
+export class HotCornerTrigger implements HotCornerPort {
   private actor: St.Widget | null = null;
   private enterHandlerId: number | null = null;
+  private handler: (() => void) | null = null;
 
-  constructor(private readonly onEnter: () => void) {}
+  /** Register the single enter handler. Must be set before {@link enable}. */
+  onEnter(handler: () => void): void {
+    this.handler = handler;
+  }
 
   /** Install the corner actor and start listening for hovers. */
   enable(): void {
@@ -55,7 +60,7 @@ export class HotCornerTrigger {
     actor.add_style_class_name('zatto-hotcorner-trigger');
 
     this.enterHandlerId = actor.connect('enter-event', () => {
-      this.onEnter();
+      this.handler?.();
       return Clutter.EVENT_PROPAGATE;
     });
 
