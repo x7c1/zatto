@@ -20,6 +20,7 @@ src/**/*.js.map
 
 # Exception: hand-written ambient type stubs for the GNOME Shell runtime
 !src/gnome-shell-ambient.d.ts
+!src/build-mode.d.ts
 
 # Build artifacts in dist/ — keep metadata.json checked in
 dist/*
