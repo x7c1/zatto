@@ -13,6 +13,7 @@
 /// <reference types="@girs/clutter-18/clutter-18-ambient" />
 /// <reference types="@girs/st-18/st-18-ambient" />
 /// <reference types="@girs/meta-18/meta-18-ambient" />
+/// <reference types="@girs/gnome-shell/dist/extensions/global" />
 
 declare module 'resource:///org/gnome/shell/extensions/extension.js' {
   export * from '@girs/gnome-shell/dist/extensions/extension';

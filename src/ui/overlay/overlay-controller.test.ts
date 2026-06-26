@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { OverlayController } from './overlay-controller.js';
-import { FakeHotCorner, FakeModalGrab, FakeOverlayActor } from './test-fakes.js';
+import { FakeHotCorner, FakeModalGrab, FakeOverlayActor, FakeWindowMirror } from './test-fakes.js';
 
 function setup(options: { debounceMs?: number } = {}) {
   let now = 0;
@@ -17,7 +17,8 @@ function setup(options: { debounceMs?: number } = {}) {
   const hotCorner = new FakeHotCorner();
   const actor = new FakeOverlayActor();
   const modalGrab = new FakeModalGrab();
-  const controller = new OverlayController(hotCorner, actor, modalGrab, {
+  const windowMirror = new FakeWindowMirror();
+  const controller = new OverlayController(hotCorner, actor, modalGrab, windowMirror, {
     debounceMs: options.debounceMs ?? 200,
     now: () => now,
     epochNow: () => epochNow,
@@ -28,6 +29,7 @@ function setup(options: { debounceMs?: number } = {}) {
     hotCorner,
     actor,
     modalGrab,
+    windowMirror,
     advance(ms: number) {
       now += ms;
       epochNow += ms;
@@ -146,7 +148,7 @@ describe('OverlayController', () => {
   });
 
   it('disable() releases the grab, destroys the actor, and stops the hot corner', () => {
-    const { controller, hotCorner, actor, modalGrab } = setup();
+    const { controller, hotCorner, actor, modalGrab, windowMirror } = setup();
     hotCorner.fireEnter(); // open so there's actually something to tear down
 
     controller.disable();
@@ -155,6 +157,11 @@ describe('OverlayController', () => {
     expect(actor.destroyed).toBe(true);
     expect(actor.isVisible()).toBe(false);
     expect(hotCorner.enabled).toBe(false);
+    // The clone container is part of the actor that's about to be
+    // destroyed — make sure we tore the clone down first so its click
+    // handler is disconnected explicitly, not implicitly via parent
+    // destruction.
+    expect(windowMirror.unmountCount).toBeGreaterThanOrEqual(1);
   });
 
   it('ignores hot-corner enters that arrive after disable()', () => {
@@ -177,6 +184,7 @@ describe('OverlayController', () => {
       expect(controller.snapshot()).toEqual({
         overlay: { state: 'closed', visible: false },
         hotCorner: { lastEnterAt: null },
+        windowMirror: { clonedCount: 0, lastActivatedAt: null },
       });
     });
 
@@ -189,6 +197,7 @@ describe('OverlayController', () => {
       expect(controller.snapshot()).toEqual({
         overlay: { state: 'open', visible: true },
         hotCorner: { lastEnterAt: 1_700_000_000_000 },
+        windowMirror: { clonedCount: 1, lastActivatedAt: null },
       });
     });
 
@@ -225,6 +234,69 @@ describe('OverlayController', () => {
       hotCorner.fireEnter(); // swallowed by debounce, but still observed
 
       expect(controller.snapshot().hotCorner.lastEnterAt).toBe(2_000);
+    });
+  });
+
+  describe('window mirror wiring', () => {
+    it('mounts a live window clone when the overlay opens', () => {
+      const { hotCorner, windowMirror } = setup();
+
+      hotCorner.fireEnter();
+
+      expect(windowMirror.mountCount).toBe(1);
+      expect(windowMirror.unmountCount).toBe(0);
+    });
+
+    it('unmounts the clones when the overlay closes via a second hot-corner enter', () => {
+      const { hotCorner, windowMirror, advance } = setup({ debounceMs: 100 });
+
+      hotCorner.fireEnter();
+      advance(150);
+      hotCorner.fireEnter();
+
+      expect(windowMirror.mountCount).toBe(1);
+      expect(windowMirror.unmountCount).toBe(1);
+    });
+
+    it('closes the overlay when the user clicks the mirrored clone', () => {
+      // Core PoC-step-3 behavior: clicking a live clone has to both raise
+      // the underlying window (the port handles that internally) AND
+      // collapse the overlay so the user sees the result immediately.
+      const { actor, hotCorner, modalGrab, windowMirror } = setup();
+      hotCorner.fireEnter();
+
+      windowMirror.simulateActivate(1_700_000_001_234);
+
+      expect(actor.isVisible()).toBe(false);
+      expect(modalGrab.isHeld()).toBe(false);
+      expect(modalGrab.releaseCount).toBe(1);
+      expect(windowMirror.unmountCount).toBe(1);
+    });
+
+    it('still opens the overlay even when no eligible window is available', () => {
+      // A "no windows to mirror" mount() return value is not an error —
+      // the dimmer should still appear so the user can dismiss the gesture
+      // they just made.
+      const { actor, hotCorner, modalGrab, windowMirror } = setup();
+      windowMirror.mountShouldFindNoWindow = true;
+
+      hotCorner.fireEnter();
+
+      expect(actor.isVisible()).toBe(true);
+      expect(modalGrab.isHeld()).toBe(true);
+      expect(windowMirror.mountCount).toBe(1);
+    });
+
+    it('surfaces lastActivatedAt in the snapshot once a clone has been activated', () => {
+      const { controller, hotCorner, windowMirror } = setup();
+      hotCorner.fireEnter();
+      windowMirror.simulateActivate(1_700_000_002_500);
+
+      const snap = controller.snapshot();
+      expect(snap.windowMirror.lastActivatedAt).toBe(1_700_000_002_500);
+      // clonedCount goes back to 0 after the controller-driven unmount that
+      // happens as part of closing in response to the click.
+      expect(snap.windowMirror.clonedCount).toBe(0);
     });
   });
 });

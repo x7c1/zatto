@@ -14,6 +14,7 @@
  * - {@link HotCornerPort}  -> `HotCornerTrigger` (`hot-corner-trigger.ts`)
  * - {@link OverlayActorPort} -> `OverlayActor` (`overlay-actor.ts`)
  * - {@link ModalGrabPort} -> `GnomeModalGrab` (`libs/shell/gnome-modal-grab.ts`)
+ * - {@link WindowMirrorPort} -> `GnomeWindowMirror` (`gnome-window-mirror.ts`)
  */
 
 /**
@@ -93,4 +94,50 @@ export interface ModalGrabPort {
   release(): void;
   /** Whether a grab is currently held. */
   isHeld(): boolean;
+}
+
+/**
+ * Read-only snapshot of the window-mirror state exposed through the D-Bus
+ * Inspect endpoint. Kept tiny on purpose — every field has to earn its keep
+ * — so external tooling has a stable contract to depend on.
+ */
+export interface WindowMirrorSnapshot {
+  /** How many live clones are currently mounted (0 or 1 in this PoC). */
+  readonly clonedCount: number;
+  /**
+   * Epoch ms of the most recent time the mirrored window was activated via a
+   * clone click, or `null` if no activation has happened yet.
+   */
+  readonly lastActivatedAt: number | null;
+}
+
+/**
+ * Mirrors one or more open windows into the overlay as live `Clutter.Clone`
+ * thumbnails and routes a click on a clone back into a window activation
+ * (`MetaWindow.activate`).
+ *
+ * For PoC step 3 the production implementation picks at most a single
+ * eligible top-level window — enough to validate the three load-bearing
+ * Mutter / Clutter API points (enumerate window actors, mirror via
+ * `Clutter.Clone`, raise via `meta_window.activate(global.get_current_time())`)
+ * — and tells the caller via the {@link mount} return value whether a clone
+ * was actually attached. Later PoC steps will widen this port (multi-window
+ * grid placement, per-zone routing) rather than replace it.
+ */
+export interface WindowMirrorPort {
+  /**
+   * Mount the live clones into the overlay's clone container. Returns `true`
+   * if at least one clone was attached, `false` if no eligible window was
+   * available (the overlay should still open so the user sees the dim plate
+   * and can dismiss).
+   *
+   * `onActivated` is invoked from the clone's click handler after the
+   * mirrored window has been raised; the controller should use it to close
+   * the overlay. The port supports exactly one handler per `mount()` call.
+   */
+  mount(onActivated: () => void): boolean;
+  /** Unmount any clones currently attached. Must be idempotent. */
+  unmount(): void;
+  /** Cheap state snapshot for the D-Bus Inspect endpoint. */
+  snapshot(): WindowMirrorSnapshot;
 }

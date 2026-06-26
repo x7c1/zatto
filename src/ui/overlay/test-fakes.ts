@@ -8,7 +8,13 @@
  * implementation details.
  */
 
-import type { HotCornerPort, ModalGrabPort, OverlayActorPort } from './ports.js';
+import type {
+  HotCornerPort,
+  ModalGrabPort,
+  OverlayActorPort,
+  WindowMirrorPort,
+  WindowMirrorSnapshot,
+} from './ports.js';
 
 export class FakeHotCorner implements HotCornerPort {
   enabled = false;
@@ -112,5 +118,55 @@ export class FakeModalGrab implements ModalGrabPort {
   /** Test helper: simulate the user pressing Escape while the grab is held. */
   fireEsc(): void {
     this.escHandler?.();
+  }
+}
+
+export class FakeWindowMirror implements WindowMirrorPort {
+  mountCount = 0;
+  unmountCount = 0;
+  /** Toggle to make the next `mount()` report "no eligible window". */
+  mountShouldFindNoWindow = false;
+  /** Wall-clock epoch ms recorded on a simulated clone click. */
+  lastActivatedAt: number | null = null;
+  private clonedCount = 0;
+  private activatedHandler: (() => void) | null = null;
+
+  mount(onActivated: () => void): boolean {
+    this.mountCount++;
+    if (this.mountShouldFindNoWindow) {
+      this.activatedHandler = null;
+      this.clonedCount = 0;
+      return false;
+    }
+    this.activatedHandler = onActivated;
+    this.clonedCount = 1;
+    return true;
+  }
+
+  unmount(): void {
+    this.unmountCount++;
+    this.activatedHandler = null;
+    this.clonedCount = 0;
+  }
+
+  snapshot(): WindowMirrorSnapshot {
+    return {
+      clonedCount: this.clonedCount,
+      lastActivatedAt: this.lastActivatedAt,
+    };
+  }
+
+  /**
+   * Test helper: simulate the user clicking a mounted clone. The fake
+   * mirrors the production behavior of recording the activation timestamp
+   * before invoking the controller-supplied callback so assertions can see
+   * the same ordering the real implementation produces.
+   */
+  simulateActivate(at: number): void {
+    if (this.activatedHandler === null) {
+      return;
+    }
+    this.lastActivatedAt = at;
+    this.activatedHandler();
   }
 }
