@@ -184,7 +184,11 @@ describe('OverlayController', () => {
       expect(controller.snapshot()).toEqual({
         overlay: { state: 'closed', visible: false },
         hotCorner: { lastEnterAt: null },
-        windowMirror: { clonedCount: 0, lastActivatedAt: null },
+        windowMirror: {
+          clonedCount: 0,
+          byZone: { topLeft: 0, topRight: 0, bottomLeft: 0, bottomRight: 0 },
+          lastActivatedAt: null,
+        },
       });
     });
 
@@ -197,7 +201,11 @@ describe('OverlayController', () => {
       expect(controller.snapshot()).toEqual({
         overlay: { state: 'open', visible: true },
         hotCorner: { lastEnterAt: 1_700_000_000_000 },
-        windowMirror: { clonedCount: 1, lastActivatedAt: null },
+        windowMirror: {
+          clonedCount: 1,
+          byZone: { topLeft: 0, topRight: 0, bottomLeft: 0, bottomRight: 1 },
+          lastActivatedAt: null,
+        },
       });
     });
 
@@ -297,6 +305,31 @@ describe('OverlayController', () => {
       // clonedCount goes back to 0 after the controller-driven unmount that
       // happens as part of closing in response to the click.
       expect(snap.windowMirror.clonedCount).toBe(0);
+    });
+
+    it('exposes per-zone clone counts in the snapshot after a multi-zone mount', () => {
+      // The controller does not own the zone routing (the production
+      // `GnomeWindowMirror` does), so this test just confirms that whatever
+      // `byZone` shape the port reports lands intact in the snapshot — the
+      // Inspect endpoint contract surface.
+      const { controller, hotCorner, windowMirror } = setup();
+      windowMirror.nextMountByZone = {
+        topLeft: 2,
+        topRight: 1,
+        bottomLeft: 0,
+        bottomRight: 3,
+      };
+
+      hotCorner.fireEnter();
+
+      const snap = controller.snapshot();
+      expect(snap.windowMirror.clonedCount).toBe(6);
+      expect(snap.windowMirror.byZone).toEqual({
+        topLeft: 2,
+        topRight: 1,
+        bottomLeft: 0,
+        bottomRight: 3,
+      });
     });
   });
 });

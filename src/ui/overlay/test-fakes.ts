@@ -12,9 +12,17 @@ import type {
   HotCornerPort,
   ModalGrabPort,
   OverlayActorPort,
+  WindowMirrorByZone,
   WindowMirrorPort,
   WindowMirrorSnapshot,
 } from './ports.js';
+
+const ZERO_BY_ZONE: WindowMirrorByZone = {
+  topLeft: 0,
+  topRight: 0,
+  bottomLeft: 0,
+  bottomRight: 0,
+};
 
 export class FakeHotCorner implements HotCornerPort {
   enabled = false;
@@ -126,32 +134,41 @@ export class FakeWindowMirror implements WindowMirrorPort {
   unmountCount = 0;
   /** Toggle to make the next `mount()` report "no eligible window". */
   mountShouldFindNoWindow = false;
+  /**
+   * Per-zone counts the next `mount()` will report. Defaults to a single
+   * clone in `bottomRight` (the production fallback zone), so existing
+   * tests that don't care about routing keep working unchanged. Tests
+   * that exercise multi-zone behavior overwrite this before firing the
+   * hot corner.
+   */
+  nextMountByZone: WindowMirrorByZone = { ...ZERO_BY_ZONE, bottomRight: 1 };
   /** Wall-clock epoch ms recorded on a simulated clone click. */
   lastActivatedAt: number | null = null;
-  private clonedCount = 0;
+  private byZone: WindowMirrorByZone = ZERO_BY_ZONE;
   private activatedHandler: (() => void) | null = null;
 
   mount(onActivated: () => void): boolean {
     this.mountCount++;
     if (this.mountShouldFindNoWindow) {
       this.activatedHandler = null;
-      this.clonedCount = 0;
+      this.byZone = ZERO_BY_ZONE;
       return false;
     }
     this.activatedHandler = onActivated;
-    this.clonedCount = 1;
-    return true;
+    this.byZone = { ...this.nextMountByZone };
+    return sumByZone(this.byZone) > 0;
   }
 
   unmount(): void {
     this.unmountCount++;
     this.activatedHandler = null;
-    this.clonedCount = 0;
+    this.byZone = ZERO_BY_ZONE;
   }
 
   snapshot(): WindowMirrorSnapshot {
     return {
-      clonedCount: this.clonedCount,
+      clonedCount: sumByZone(this.byZone),
+      byZone: { ...this.byZone },
       lastActivatedAt: this.lastActivatedAt,
     };
   }
@@ -169,4 +186,8 @@ export class FakeWindowMirror implements WindowMirrorPort {
     this.lastActivatedAt = at;
     this.activatedHandler();
   }
+}
+
+function sumByZone(byZone: WindowMirrorByZone): number {
+  return byZone.topLeft + byZone.topRight + byZone.bottomLeft + byZone.bottomRight;
 }
