@@ -1,0 +1,116 @@
+/**
+ * Test doubles for the overlay ports.
+ *
+ * These fakes are the entire reason the ports exist: they let `OverlayController`
+ * be exercised end-to-end under vitest without bootstrapping GNOME Shell. Each
+ * fake records the lifecycle calls the controller makes on it so tests can
+ * assert "we called `acquire` then later `release`" rather than checking
+ * implementation details.
+ */
+
+import type { HotCornerPort, ModalGrabPort, OverlayActorPort } from './ports.js';
+
+export class FakeHotCorner implements HotCornerPort {
+  enabled = false;
+  private handler: (() => void) | null = null;
+
+  enable(): void {
+    this.enabled = true;
+  }
+
+  disable(): void {
+    this.enabled = false;
+  }
+
+  onEnter(handler: () => void): void {
+    this.handler = handler;
+  }
+
+  /** Test helper: simulate a hover into the trigger zone. */
+  fireEnter(): void {
+    this.handler?.();
+  }
+}
+
+export class FakeOverlayActor implements OverlayActorPort {
+  mounted = false;
+  destroyed = false;
+  private visible = false;
+  private cornerReenterHandler: (() => void) | null = null;
+
+  mount(): void {
+    this.mounted = true;
+  }
+
+  show(): void {
+    if (!this.mounted) {
+      return;
+    }
+    this.visible = true;
+  }
+
+  hide(): void {
+    this.visible = false;
+  }
+
+  isVisible(): boolean {
+    return this.visible;
+  }
+
+  onCornerReenter(handler: () => void): void {
+    this.cornerReenterHandler = handler;
+  }
+
+  /**
+   * Test helper: simulate the user hovering the in-overlay corner sensor
+   * (i.e. re-entering the hot corner zone while the modal grab is held).
+   */
+  simulateCornerReenter(): void {
+    this.cornerReenterHandler?.();
+  }
+
+  destroy(): void {
+    this.mounted = false;
+    this.destroyed = true;
+    this.visible = false;
+  }
+}
+
+export class FakeModalGrab implements ModalGrabPort {
+  acquireCount = 0;
+  releaseCount = 0;
+  /** Toggle to make `acquire()` return false (simulating a `pushModal` failure). */
+  acquireShouldFail = false;
+  private held = false;
+  private escHandler: (() => void) | null = null;
+
+  onEsc(handler: () => void): void {
+    this.escHandler = handler;
+  }
+
+  acquire(): boolean {
+    this.acquireCount++;
+    if (this.acquireShouldFail) {
+      return false;
+    }
+    this.held = true;
+    return true;
+  }
+
+  release(): void {
+    if (!this.held) {
+      return;
+    }
+    this.releaseCount++;
+    this.held = false;
+  }
+
+  isHeld(): boolean {
+    return this.held;
+  }
+
+  /** Test helper: simulate the user pressing Escape while the grab is held. */
+  fireEsc(): void {
+    this.escHandler?.();
+  }
+}

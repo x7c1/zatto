@@ -13,6 +13,8 @@ import Clutter from 'gi://Clutter';
 import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { safeAddChrome } from '../../libs/shell/safe-add-chrome.js';
+import { HOT_CORNER_SIZE } from './hot-corner-trigger.js';
+import type { OverlayActorPort } from './ports.js';
 
 const CARD_WIDTH = 400;
 const CARD_HEIGHT = 300;
@@ -27,9 +29,17 @@ const CARD_STYLE = [
   'padding: 24px;',
 ].join(' ');
 
-export class OverlayActor {
+export class OverlayActor implements OverlayActorPort {
   private dimmer: St.Widget | null = null;
+  private dimmerMotionId: number | null = null;
+  private cornerLatched = false;
+  private cornerReenterHandler: (() => void) | null = null;
   private mounted = false;
+  private visible = false;
+
+  onCornerReenter(handler: () => void): void {
+    this.cornerReenterHandler = handler;
+  }
 
   /** Mount the dimmer to the Shell chrome (hidden until `show()` is called). */
   mount(): void {
@@ -68,6 +78,36 @@ export class OverlayActor {
     card.add_style_class_name('zatto-overlay-card');
     dimmer.add_child(card);
 
+    // Re-entry detection: the chrome-level `HotCornerTrigger` is a sibling of
+    // the dimmer, not a descendant, so it stops receiving pointer events the
+    // moment `pushModal(dimmer)` routes everything to the grab actor. A child
+    // sensor with `enter-event` doesn't work either — under the modal grab,
+    // Clutter binds pointer focus to the grab actor and does not re-evaluate
+    // the hit-actor inside the grab region except when an implicit pointer
+    // grab (e.g. mouse-button-hold) ends, so plain hovers never fire child
+    // `enter-event`s. The grab actor itself, however, receives `motion-event`
+    // reliably; combine a coordinate check with an edge-detection latch so
+    // the handler fires exactly once per physical corner re-entry.
+    this.dimmerMotionId = dimmer.connect('motion-event', (_actor, event) => {
+      const [stageX, stageY] = event.get_coords();
+      const localX = stageX - monitor.x;
+      const localY = stageY - monitor.y;
+      const insideCorner =
+        localX >= 0 &&
+        localX < HOT_CORNER_SIZE &&
+        localY >= monitor.height - HOT_CORNER_SIZE &&
+        localY < monitor.height;
+      if (insideCorner) {
+        if (!this.cornerLatched) {
+          this.cornerLatched = true;
+          this.cornerReenterHandler?.();
+        }
+      } else {
+        this.cornerLatched = false;
+      }
+      return Clutter.EVENT_PROPAGATE;
+    });
+
     safeAddChrome(dimmer, { trackFullscreen: true });
     this.dimmer = dimmer;
     this.mounted = true;
@@ -78,6 +118,7 @@ export class OverlayActor {
       return;
     }
     this.dimmer.show();
+    this.visible = true;
   }
 
   hide(): void {
@@ -85,6 +126,12 @@ export class OverlayActor {
       return;
     }
     this.dimmer.hide();
+    this.visible = false;
+    this.cornerLatched = false;
+  }
+
+  isVisible(): boolean {
+    return this.visible;
   }
 
   /** The reactive actor used as the modal grab target. */
@@ -94,11 +141,17 @@ export class OverlayActor {
 
   /** Unmount and destroy. Idempotent. */
   destroy(): void {
+    if (this.dimmer !== null && this.dimmerMotionId !== null) {
+      this.dimmer.disconnect(this.dimmerMotionId);
+      this.dimmerMotionId = null;
+    }
     if (this.dimmer !== null) {
       Main.layoutManager.removeChrome(this.dimmer);
       this.dimmer.destroy();
       this.dimmer = null;
     }
     this.mounted = false;
+    this.visible = false;
+    this.cornerLatched = false;
   }
 }

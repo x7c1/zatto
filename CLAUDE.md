@@ -31,3 +31,16 @@ Prerequisites:
 - The extension must already be installed and enabled at least once (so the D-Bus interface at `/io/github/x7c1/Zatto` is registered).
 - The session must be a logged-in GNOME Shell (Wayland or X11).
 - The reloader is gated by `__DEV__` and is absent from release builds (`npm run build:release`).
+
+## Inspect endpoint
+
+A read-only D-Bus sibling of the reloader (same `__DEV__` gate, same registration pattern) exposes the live controller state for manual debugging:
+
+```bash
+gdbus call --session \
+  --dest org.gnome.Shell \
+  --object-path /io/github/x7c1/Zatto/Inspect \
+  --method io.github.x7c1.Zatto.Inspect.GetState
+```
+
+Returns a JSON snapshot (`{ overlay: { state, visible }, hotCorner: { lastEnterAt } }`). Intended for ad-hoc inspection during `npm run dev` and, later, for assertions from a nested-shell e2e harness.
