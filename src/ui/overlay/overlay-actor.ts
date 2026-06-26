@@ -1,12 +1,14 @@
 /**
- * Overlay actor: full-monitor dimmer with a single centered placeholder card.
+ * Overlay actor: full-monitor dimmer that hosts live window clones in its
+ * center.
  *
- * This is the bare-bones visual surface for the hot-corner toggle PoC.
- * Subsequent PoC steps will replace the placeholder card with window clones
- * arranged into per-app zones.
- *
- * The dimmer is reactive so it absorbs background clicks; the card itself is
- * decorative for now.
+ * The dimmer itself is reactive so it absorbs background clicks; the actual
+ * "what does the user see in the middle" content is no longer owned by this
+ * file. Starting from PoC step 3 it is supplied by the
+ * {@link WindowMirrorPort} production implementation, which adds a live
+ * `Clutter.Clone` as a child of the dimmer via {@link OverlayActor.getCloneContainer}.
+ * The dimmer keeps using `Clutter.BinLayout` so any single clone child is
+ * naturally centered without manual positioning.
  */
 
 import Clutter from 'gi://Clutter';
@@ -16,18 +18,7 @@ import { safeAddChrome } from '../../libs/shell/safe-add-chrome.js';
 import { HOT_CORNER_SIZE } from './hot-corner-trigger.js';
 import type { OverlayActorPort } from './ports.js';
 
-const CARD_WIDTH = 400;
-const CARD_HEIGHT = 300;
-
 const DIMMER_STYLE = 'background-color: rgba(0, 0, 0, 0.5);';
-const CARD_STYLE = [
-  'background-color: rgba(40, 40, 40, 0.95);',
-  'border: 1px solid rgba(255, 255, 255, 0.15);',
-  'border-radius: 12px;',
-  'color: #ffffff;',
-  'font-size: 16px;',
-  'padding: 24px;',
-].join(' ');
 
 export class OverlayActor implements OverlayActorPort {
   private dimmer: St.Widget | null = null;
@@ -66,17 +57,6 @@ export class OverlayActor implements OverlayActorPort {
       layout_manager: new Clutter.BinLayout(),
     });
     dimmer.add_style_class_name('zatto-overlay-dimmer');
-
-    const card = new St.Widget({
-      style: CARD_STYLE,
-      width: CARD_WIDTH,
-      height: CARD_HEIGHT,
-      x_align: Clutter.ActorAlign.CENTER,
-      y_align: Clutter.ActorAlign.CENTER,
-      reactive: false,
-    });
-    card.add_style_class_name('zatto-overlay-card');
-    dimmer.add_child(card);
 
     // Re-entry detection: the chrome-level `HotCornerTrigger` is a sibling of
     // the dimmer, not a descendant, so it stops receiving pointer events the
@@ -136,6 +116,17 @@ export class OverlayActor implements OverlayActorPort {
 
   /** The reactive actor used as the modal grab target. */
   getGrabActor(): Clutter.Actor | null {
+    return this.dimmer;
+  }
+
+  /**
+   * The container child clones should be parented to. Today this is the
+   * dimmer itself (whose `Clutter.BinLayout` naturally centers a single
+   * child); kept as a dedicated method so future layouts (multi-clone grid)
+   * can swap in a sibling container without touching the
+   * {@link WindowMirrorPort} production code that calls this.
+   */
+  getCloneContainer(): St.Widget | null {
     return this.dimmer;
   }
 

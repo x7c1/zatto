@@ -1,19 +1,26 @@
 /**
  * Glue layer: connects the pure {@link OverlayStateMachine} to its
- * collaborators (hot corner, overlay actor, modal grab) through small
- * interfaces.
+ * collaborators (hot corner, overlay actor, modal grab, window mirror)
+ * through small interfaces.
  *
  * The controller deliberately depends only on the {@link HotCornerPort},
- * {@link OverlayActorPort}, and {@link ModalGrabPort} abstractions — never on
- * `Main` / `Clutter` / `St` / `gi:` directly. This is the seam that lets
- * vitest exercise the full toggle / Esc / debounce wiring without booting
- * a real GNOME Shell. Production wiring lives in `extension.ts`, which
- * instantiates the real `HotCornerTrigger`, `OverlayActor`, and
- * `GnomeModalGrab` and hands them in here.
+ * {@link OverlayActorPort}, {@link ModalGrabPort}, and
+ * {@link WindowMirrorPort} abstractions — never on `Main` / `Clutter` / `St`
+ * / `gi:` directly. This is the seam that lets vitest exercise the full
+ * toggle / Esc / debounce / live-clone wiring without booting a real GNOME
+ * Shell. Production wiring lives in `extension.ts`, which instantiates the
+ * real `HotCornerTrigger`, `OverlayActor`, `GnomeModalGrab`, and
+ * `GnomeWindowMirror` and hands them in here.
  */
 
 import { type OverlayState, OverlayStateMachine } from './overlay-state-machine.js';
-import type { HotCornerPort, ModalGrabPort, OverlayActorPort } from './ports.js';
+import type {
+  HotCornerPort,
+  ModalGrabPort,
+  OverlayActorPort,
+  WindowMirrorPort,
+  WindowMirrorSnapshot,
+} from './ports.js';
 
 /**
  * Debounce window for hot-corner re-entry. 250 ms is short enough to feel
@@ -36,6 +43,7 @@ export interface OverlayControllerSnapshot {
     /** Epoch ms of the most recent hot-corner enter, or `null` if none yet. */
     lastEnterAt: number | null;
   };
+  windowMirror: WindowMirrorSnapshot;
 }
 
 /** Source of a wall-clock epoch-ms timestamp. Injected so tests stay deterministic. */
@@ -69,6 +77,7 @@ export class OverlayController {
     private readonly hotCorner: HotCornerPort,
     private readonly actor: OverlayActorPort,
     private readonly modalGrab: ModalGrabPort,
+    private readonly windowMirror: WindowMirrorPort,
     options: OverlayControllerOptions
   ) {
     const debounceMs = options.debounceMs ?? HOTCORNER_DEBOUNCE_MS;
@@ -110,6 +119,10 @@ export class OverlayController {
   disable(): void {
     this.hotCorner.disable();
     this.modalGrab.release();
+    // Unmount any live clones BEFORE destroying the actor so the clone
+    // children get a chance to disconnect their click handlers cleanly
+    // instead of being torn down implicitly with the parent dimmer.
+    this.windowMirror.unmount();
     this.actor.destroy();
 
     if (this.unsubscribeFsm !== null) {
@@ -133,6 +146,7 @@ export class OverlayController {
       hotCorner: {
         lastEnterAt: this.lastEnterAt,
       },
+      windowMirror: this.windowMirror.snapshot(),
     };
   }
 
@@ -143,11 +157,19 @@ export class OverlayController {
     // visually open (matching the pre-port behavior). Esc will not work in
     // that degenerate case, but the user can dismiss via the hot corner.
     this.modalGrab.acquire();
+    // Mount the live clones after the grab is held so the clones inherit
+    // the same input-routing context the user will be clicking through. A
+    // `false` return (no eligible window) is not an error: the overlay
+    // stays open with just the dimmer and the user dismisses via the
+    // corner or Esc — the PoC value is "did the API even fire", not "did
+    // we always find something to show".
+    this.windowMirror.mount(() => this.fsm.dismiss());
     this.fsm.commitOpened();
   }
 
   private handleClose(): void {
     this.modalGrab.release();
+    this.windowMirror.unmount();
     this.actor.hide();
     this.fsm.commitClosed();
   }

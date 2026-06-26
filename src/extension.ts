@@ -6,6 +6,7 @@ import { EXTENSION_UUID } from './infra/constants.js';
 import { DBusInspector } from './libs/inspector/index.js';
 import { DBusReloader } from './libs/reloader/index.js';
 import { GnomeModalGrab } from './libs/shell/gnome-modal-grab.js';
+import { GnomeWindowMirror } from './ui/overlay/gnome-window-mirror.js';
 import { HotCornerTrigger } from './ui/overlay/hot-corner-trigger.js';
 import { OverlayActor } from './ui/overlay/overlay-actor.js';
 import { OverlayController } from './ui/overlay/overlay-controller.js';
@@ -24,7 +25,8 @@ export default class ZattoExtension extends Extension {
     const actor = new OverlayActor();
     const modalGrab = new GnomeModalGrab(() => actor.getGrabActor());
     const hotCorner = new HotCornerTrigger();
-    this.overlayController = new OverlayController(hotCorner, actor, modalGrab, {
+    const windowMirror = new GnomeWindowMirror(() => actor.getCloneContainer());
+    this.overlayController = new OverlayController(hotCorner, actor, modalGrab, windowMirror, {
       // Monotonic ms — GLib reports microseconds, convert once.
       now: () => GLib.get_monotonic_time() / 1000,
     });
