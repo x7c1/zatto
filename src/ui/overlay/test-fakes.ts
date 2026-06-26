@@ -36,6 +36,7 @@ export class FakeOverlayActor implements OverlayActorPort {
   mounted = false;
   destroyed = false;
   private visible = false;
+  private cornerReenterHandler: (() => void) | null = null;
 
   mount(): void {
     this.mounted = true;
@@ -54,6 +55,18 @@ export class FakeOverlayActor implements OverlayActorPort {
 
   isVisible(): boolean {
     return this.visible;
+  }
+
+  onCornerReenter(handler: () => void): void {
+    this.cornerReenterHandler = handler;
+  }
+
+  /**
+   * Test helper: simulate the user hovering the in-overlay corner sensor
+   * (i.e. re-entering the hot corner zone while the modal grab is held).
+   */
+  simulateCornerReenter(): void {
+    this.cornerReenterHandler?.();
   }
 
   destroy(): void {

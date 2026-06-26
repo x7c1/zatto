@@ -39,6 +39,13 @@ export interface HotCornerPort {
  *
  * The controller does not care about the actor's internal hierarchy; it only
  * needs to mount it, toggle its visibility, and tear it down.
+ *
+ * The actor also owns an in-overlay corner sensor — a small reactive child of
+ * the dimmer covering the same rect as {@link HotCornerPort}. While the modal
+ * grab is held, Clutter routes pointer events only to the grab actor and its
+ * descendants, so the chrome-level hot corner stops firing. The in-overlay
+ * sensor exists purely to restore the "re-enter the hot corner to dismiss"
+ * gesture in that state, via {@link onCornerReenter}.
  */
 export interface OverlayActorPort {
   /** Mount the actor into the Shell chrome (hidden until {@link show}). */
@@ -49,6 +56,13 @@ export interface OverlayActorPort {
   hide(): void;
   /** Whether the actor is currently visible to the user. */
   isVisible(): boolean;
+  /**
+   * Register the single re-entry handler fired when the cursor enters the
+   * in-overlay corner sensor (i.e. while the modal grab is held). The port
+   * supports exactly one handler at a time; the most recent registration
+   * wins. Set before calling {@link mount}.
+   */
+  onCornerReenter(handler: () => void): void;
   /** Unmount and free resources. Must be idempotent. */
   destroy(): void;
 }

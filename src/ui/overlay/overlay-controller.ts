@@ -97,6 +97,11 @@ export class OverlayController {
       this.lastEnterAt = this.epochNow();
       this.fsm.toggle();
     });
+    // The in-overlay corner sensor relays the "re-enter the hot corner while
+    // open" gesture that the chrome-level `HotCornerTrigger` can no longer
+    // observe under the modal grab. The FSM's debounce + state guard provide
+    // the same jitter protection as the primary hot-corner path.
+    this.actor.onCornerReenter(() => this.fsm.toggle());
 
     this.actor.mount();
     this.hotCorner.enable();

@@ -26,7 +26,14 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { safeAddChrome } from '../../libs/shell/safe-add-chrome.js';
 import type { HotCornerPort } from './ports.js';
 
-const TRIGGER_SIZE = 5;
+/**
+ * Side length (px) of the invisible reactive square anchored at the bottom-left
+ * corner. Exported so the in-overlay re-entry sensor (mounted as a child of
+ * the dimmer in {@link OverlayActor}) can mirror the same rect — the user must
+ * see the two sensors as a single corner regardless of whether the modal grab
+ * is held.
+ */
+export const HOT_CORNER_SIZE = 5;
 
 export class HotCornerTrigger implements HotCornerPort {
   private actor: St.Widget | null = null;
@@ -52,10 +59,10 @@ export class HotCornerTrigger implements HotCornerPort {
     const actor = new St.Widget({
       reactive: true,
       opacity: 0,
-      width: TRIGGER_SIZE,
-      height: TRIGGER_SIZE,
+      width: HOT_CORNER_SIZE,
+      height: HOT_CORNER_SIZE,
       x: monitor.x,
-      y: monitor.y + monitor.height - TRIGGER_SIZE,
+      y: monitor.y + monitor.height - HOT_CORNER_SIZE,
     });
     actor.add_style_class_name('zatto-hotcorner-trigger');
 

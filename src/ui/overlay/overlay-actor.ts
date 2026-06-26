@@ -13,6 +13,7 @@ import Clutter from 'gi://Clutter';
 import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { safeAddChrome } from '../../libs/shell/safe-add-chrome.js';
+import { HOT_CORNER_SIZE } from './hot-corner-trigger.js';
 import type { OverlayActorPort } from './ports.js';
 
 const CARD_WIDTH = 400;
@@ -30,8 +31,15 @@ const CARD_STYLE = [
 
 export class OverlayActor implements OverlayActorPort {
   private dimmer: St.Widget | null = null;
+  private cornerSensor: St.Widget | null = null;
+  private cornerSensorEnterHandlerId: number | null = null;
+  private cornerReenterHandler: (() => void) | null = null;
   private mounted = false;
   private visible = false;
+
+  onCornerReenter(handler: () => void): void {
+    this.cornerReenterHandler = handler;
+  }
 
   /** Mount the dimmer to the Shell chrome (hidden until `show()` is called). */
   mount(): void {
@@ -70,8 +78,30 @@ export class OverlayActor implements OverlayActorPort {
     card.add_style_class_name('zatto-overlay-card');
     dimmer.add_child(card);
 
+    // Re-entry sensor: a same-sized invisible reactive square pinned to the
+    // bottom-left of the dimmer. The chrome-level `HotCornerTrigger` is a
+    // sibling of the dimmer, not a descendant, so it stops receiving pointer
+    // events the moment `pushModal(dimmer)` routes everything to the grab
+    // actor. Mounting a corner sensor *inside* the dimmer keeps the
+    // "re-hover the corner to dismiss" gesture alive while the grab is held.
+    const cornerSensor = new St.Widget({
+      reactive: true,
+      opacity: 0,
+      width: HOT_CORNER_SIZE,
+      height: HOT_CORNER_SIZE,
+      x_align: Clutter.ActorAlign.START,
+      y_align: Clutter.ActorAlign.END,
+    });
+    cornerSensor.add_style_class_name('zatto-overlay-corner-sensor');
+    this.cornerSensorEnterHandlerId = cornerSensor.connect('enter-event', () => {
+      this.cornerReenterHandler?.();
+      return Clutter.EVENT_PROPAGATE;
+    });
+    dimmer.add_child(cornerSensor);
+
     safeAddChrome(dimmer, { trackFullscreen: true });
     this.dimmer = dimmer;
+    this.cornerSensor = cornerSensor;
     this.mounted = true;
   }
 
@@ -102,6 +132,11 @@ export class OverlayActor implements OverlayActorPort {
 
   /** Unmount and destroy. Idempotent. */
   destroy(): void {
+    if (this.cornerSensor !== null && this.cornerSensorEnterHandlerId !== null) {
+      this.cornerSensor.disconnect(this.cornerSensorEnterHandlerId);
+      this.cornerSensorEnterHandlerId = null;
+    }
+    this.cornerSensor = null;
     if (this.dimmer !== null) {
       Main.layoutManager.removeChrome(this.dimmer);
       this.dimmer.destroy();

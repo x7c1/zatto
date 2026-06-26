@@ -62,6 +62,38 @@ describe('OverlayController', () => {
     expect(modalGrab.releaseCount).toBe(1);
   });
 
+  it('closes the overlay via the in-overlay corner sensor while the modal grab is held', () => {
+    // Regression: under the modal grab the chrome-level `HotCornerTrigger`
+    // stops receiving pointer events (events are routed only to the grab
+    // actor and its descendants), so the in-overlay corner sensor must own
+    // the Open -> Closed path while open.
+    const { controller, hotCorner, actor, modalGrab, advance } = setup({ debounceMs: 100 });
+
+    hotCorner.fireEnter();
+    advance(150); // clear the debounce window
+
+    actor.simulateCornerReenter();
+
+    expect(actor.isVisible()).toBe(false);
+    expect(modalGrab.isHeld()).toBe(false);
+    expect(modalGrab.releaseCount).toBe(1);
+    expect(controller.snapshot().overlay.state).toBe('closed');
+  });
+
+  it('ignores a corner-reenter that arrives inside the debounce window', () => {
+    const { actor, hotCorner, modalGrab, advance } = setup({ debounceMs: 200 });
+
+    hotCorner.fireEnter(); // opens, starts the cooldown
+    advance(50); // < 200ms
+    actor.simulateCornerReenter();
+
+    // Still open — the corner sensor shares the FSM's debounce contract with
+    // the primary hot corner.
+    expect(actor.isVisible()).toBe(true);
+    expect(modalGrab.isHeld()).toBe(true);
+    expect(modalGrab.releaseCount).toBe(0);
+  });
+
   it('closes the overlay and releases the grab when Esc fires', () => {
     const { hotCorner, actor, modalGrab } = setup();
 
