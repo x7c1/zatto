@@ -28,13 +28,42 @@ describe('resolveZone', () => {
     expect(resolveZone('')).toBe(FALLBACK_ZONE);
   });
 
-  it('matches case-sensitively (no implicit normalization)', () => {
-    // wm_class is reported verbatim by Mutter; we deliberately do not
-    // lowercase it because the same vendor sometimes ships both
-    // "Google-chrome" and "google-chrome" on different distros and we want
-    // the routing to be precise rather than guessing.
-    expect(resolveZone('code')).toBe(FALLBACK_ZONE);
+  it('matches case-insensitively so distro-specific casing still routes', () => {
+    // Mutter is inconsistent about case across distros and packaging
+    // variants — e.g. `Code` vs `code`, `Google-chrome` vs `google-chrome`.
+    // resolveZone() lowercases both sides at lookup time so any spelling
+    // of a registered class lands in the same zone.
     expect(resolveZone('Code')).toBe('topLeft');
+    expect(resolveZone('code')).toBe('topLeft');
+    expect(resolveZone('CODE')).toBe('topLeft');
+    expect(resolveZone('Google-chrome')).toBe('topRight');
+    expect(resolveZone('google-chrome')).toBe('topRight');
+    expect(resolveZone('GOOGLE-CHROME')).toBe('topRight');
+  });
+
+  it('routes snap-packaged classes observed on dogfood machines', () => {
+    // Snap packages of the same app report a different wm_class than the
+    // distro builds (`firefox_firefox` instead of `firefox`,
+    // `Vivaldi-snap` instead of `Vivaldi`); both forms are registered so
+    // the snap install lands in the same zone as the non-snap install.
+    expect(resolveZone('firefox_firefox')).toBe('topRight');
+    expect(resolveZone('Vivaldi-snap')).toBe('topRight');
+  });
+
+  it('parks org.gnome.Settings into the chat zone as a placeholder', () => {
+    // Settings has no natural home in the dev/browser/chat trichotomy;
+    // putting it in the otherwise-empty bottom-left keeps it reachable
+    // without hiding it under the fallback pile.
+    expect(resolveZone('org.gnome.Settings')).toBe('bottomLeft');
+  });
+
+  it('still falls back for unregistered classes (e.g. Chrome PWAs)', () => {
+    // Chrome PWAs report a per-app id like
+    // `chrome-<appid>-Default`, which we intentionally do not register —
+    // prefix matching for those is deferred to a follow-up. They must
+    // continue to land in the fallback zone, not accidentally match a
+    // shorter prefix.
+    expect(resolveZone('chrome-fmpnliohjhemenmnlpbfagaolkdacoja-Default')).toBe(FALLBACK_ZONE);
   });
 });
 
@@ -47,5 +76,23 @@ describe('APP_ZONE table', () => {
 
   it('fallback zone is one of the known zones', () => {
     expect(ZONE_KEYS).toContain(FALLBACK_ZONE);
+  });
+
+  it('has no case-only duplicates that disagree on zone', () => {
+    // The case-insensitive lookup collapses keys that differ only in
+    // case. That collapse is harmless only if the colliding entries
+    // agree on the target zone — otherwise the later entry would
+    // silently win. Guard against that by failing the test if any
+    // disagreement sneaks in.
+    const byLower = new Map<string, ZoneKey>();
+    for (const [key, zone] of Object.entries(APP_ZONE)) {
+      const lower = key.toLowerCase();
+      const prior = byLower.get(lower);
+      if (prior !== undefined) {
+        expect(prior).toBe(zone);
+      } else {
+        byLower.set(lower, zone);
+      }
+    }
   });
 });
