@@ -31,8 +31,8 @@ const CARD_STYLE = [
 
 export class OverlayActor implements OverlayActorPort {
   private dimmer: St.Widget | null = null;
-  private cornerSensor: St.Widget | null = null;
-  private cornerSensorEnterHandlerId: number | null = null;
+  private dimmerMotionId: number | null = null;
+  private cornerLatched = false;
   private cornerReenterHandler: (() => void) | null = null;
   private mounted = false;
   private visible = false;
@@ -78,30 +78,38 @@ export class OverlayActor implements OverlayActorPort {
     card.add_style_class_name('zatto-overlay-card');
     dimmer.add_child(card);
 
-    // Re-entry sensor: a same-sized invisible reactive square pinned to the
-    // bottom-left of the dimmer. The chrome-level `HotCornerTrigger` is a
-    // sibling of the dimmer, not a descendant, so it stops receiving pointer
-    // events the moment `pushModal(dimmer)` routes everything to the grab
-    // actor. Mounting a corner sensor *inside* the dimmer keeps the
-    // "re-hover the corner to dismiss" gesture alive while the grab is held.
-    const cornerSensor = new St.Widget({
-      reactive: true,
-      opacity: 0,
-      width: HOT_CORNER_SIZE,
-      height: HOT_CORNER_SIZE,
-      x_align: Clutter.ActorAlign.START,
-      y_align: Clutter.ActorAlign.END,
-    });
-    cornerSensor.add_style_class_name('zatto-overlay-corner-sensor');
-    this.cornerSensorEnterHandlerId = cornerSensor.connect('enter-event', () => {
-      this.cornerReenterHandler?.();
+    // Re-entry detection: the chrome-level `HotCornerTrigger` is a sibling of
+    // the dimmer, not a descendant, so it stops receiving pointer events the
+    // moment `pushModal(dimmer)` routes everything to the grab actor. A child
+    // sensor with `enter-event` doesn't work either — under the modal grab,
+    // Clutter binds pointer focus to the grab actor and does not re-evaluate
+    // the hit-actor inside the grab region except when an implicit pointer
+    // grab (e.g. mouse-button-hold) ends, so plain hovers never fire child
+    // `enter-event`s. The grab actor itself, however, receives `motion-event`
+    // reliably; combine a coordinate check with an edge-detection latch so
+    // the handler fires exactly once per physical corner re-entry.
+    this.dimmerMotionId = dimmer.connect('motion-event', (_actor, event) => {
+      const [stageX, stageY] = event.get_coords();
+      const localX = stageX - monitor.x;
+      const localY = stageY - monitor.y;
+      const insideCorner =
+        localX >= 0 &&
+        localX < HOT_CORNER_SIZE &&
+        localY >= monitor.height - HOT_CORNER_SIZE &&
+        localY < monitor.height;
+      if (insideCorner) {
+        if (!this.cornerLatched) {
+          this.cornerLatched = true;
+          this.cornerReenterHandler?.();
+        }
+      } else {
+        this.cornerLatched = false;
+      }
       return Clutter.EVENT_PROPAGATE;
     });
-    dimmer.add_child(cornerSensor);
 
     safeAddChrome(dimmer, { trackFullscreen: true });
     this.dimmer = dimmer;
-    this.cornerSensor = cornerSensor;
     this.mounted = true;
   }
 
@@ -119,6 +127,7 @@ export class OverlayActor implements OverlayActorPort {
     }
     this.dimmer.hide();
     this.visible = false;
+    this.cornerLatched = false;
   }
 
   isVisible(): boolean {
@@ -132,11 +141,10 @@ export class OverlayActor implements OverlayActorPort {
 
   /** Unmount and destroy. Idempotent. */
   destroy(): void {
-    if (this.cornerSensor !== null && this.cornerSensorEnterHandlerId !== null) {
-      this.cornerSensor.disconnect(this.cornerSensorEnterHandlerId);
-      this.cornerSensorEnterHandlerId = null;
+    if (this.dimmer !== null && this.dimmerMotionId !== null) {
+      this.dimmer.disconnect(this.dimmerMotionId);
+      this.dimmerMotionId = null;
     }
-    this.cornerSensor = null;
     if (this.dimmer !== null) {
       Main.layoutManager.removeChrome(this.dimmer);
       this.dimmer.destroy();
@@ -144,5 +152,6 @@ export class OverlayActor implements OverlayActorPort {
     }
     this.mounted = false;
     this.visible = false;
+    this.cornerLatched = false;
   }
 }
