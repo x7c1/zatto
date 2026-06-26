@@ -108,7 +108,14 @@ export class OverlayActor implements OverlayActorPort {
       return Clutter.EVENT_PROPAGATE;
     });
 
-    safeAddChrome(dimmer, { trackFullscreen: true });
+    safeAddChrome(dimmer);
+    if (__DEV__) {
+      dimmer.connect('notify::visible', () => {
+        console.log(
+          `[Zatto] OverlayActor.dimmer notify::visible — dimmer.visible=${dimmer.visible}, tracked this.mounted=${this.mounted}`
+        );
+      });
+    }
     this.dimmer = dimmer;
     this.mounted = true;
   }
