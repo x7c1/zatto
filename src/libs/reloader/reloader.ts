@@ -14,6 +14,9 @@ import GLib from 'gi://GLib';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import type { ExtensionObject } from '@girs/gnome-shell/dist/types/extension-object.js';
 import type { ExtensionManager } from '@girs/gnome-shell/dist/ui/extensionSystem.js';
+import { GnomeShellExtensionSettings } from './gnome-shell-extension-settings.js';
+import type { ShellExtensionSettingsPort } from './ports.js';
+import { pruneStaleReloadUuids } from './prune-stale-reloads.js';
 
 // Declare TextEncoder/TextDecoder for TypeScript
 declare class TextDecoder {
@@ -38,16 +41,20 @@ export class Reloader {
   private originalUuid: string;
   private currentUuid: string;
   private extensionDir: string;
+  private settingsPort: ShellExtensionSettingsPort;
 
   /**
    * Create a new Reloader instance
    * @param uuid The extension UUID (e.g., 'my-extension@example.com')
    * @param currentUuid Optional current UUID (used internally for reloaded instances)
+   * @param settingsPort Optional GSettings port; defaults to a Gio-backed
+   *   implementation wrapping `org.gnome.shell`. Tests inject a fake.
    */
-  constructor(uuid: string, currentUuid?: string) {
+  constructor(uuid: string, currentUuid?: string, settingsPort?: ShellExtensionSettingsPort) {
     this.originalUuid = uuid;
     this.currentUuid = currentUuid || uuid;
     this.extensionDir = `${GLib.get_home_dir()}/.local/share/gnome-shell/extensions/${this.originalUuid}`;
+    this.settingsPort = settingsPort ?? new GnomeShellExtensionSettings();
   }
 
   /**
@@ -106,6 +113,12 @@ export class Reloader {
       // Clean up old files and extension
       this.cleanupTempDirs(tmpDir);
       this.unloadOldExtension(extensionManager, this.currentUuid);
+
+      // Prune stale `<base>-reload-<digits>` entries that prior `npm run dev`
+      // iterations left behind in `org.gnome.shell` enabled-extensions /
+      // disabled-extensions. Runs after the new UUID is enabled so we never
+      // accidentally evict the currently-running instance.
+      pruneStaleReloadUuids(this.settingsPort, this.originalUuid, newUuid);
 
       console.log('[Reloader] Reload complete!');
     } catch (e: unknown) {
