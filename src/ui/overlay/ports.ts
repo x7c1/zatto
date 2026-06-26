@@ -97,13 +97,31 @@ export interface ModalGrabPort {
 }
 
 /**
+ * Per-zone breakdown of mounted clones. Keys match the four quadrant
+ * identifiers exported by `zone-layout.ts`; each value is the count of
+ * clones currently mounted in that zone (zero if the zone is empty).
+ *
+ * Kept here (not imported from `zone-layout.ts`) so the port surface stays
+ * self-describing and the Inspect endpoint contract does not transitively
+ * pull in layout-side types.
+ */
+export interface WindowMirrorByZone {
+  readonly topLeft: number;
+  readonly topRight: number;
+  readonly bottomLeft: number;
+  readonly bottomRight: number;
+}
+
+/**
  * Read-only snapshot of the window-mirror state exposed through the D-Bus
  * Inspect endpoint. Kept tiny on purpose — every field has to earn its keep
  * — so external tooling has a stable contract to depend on.
  */
 export interface WindowMirrorSnapshot {
-  /** How many live clones are currently mounted (0 or 1 in this PoC). */
+  /** How many live clones are currently mounted across all zones. */
   readonly clonedCount: number;
+  /** Per-zone clone counts. Sum of the values equals {@link clonedCount}. */
+  readonly byZone: WindowMirrorByZone;
   /**
    * Epoch ms of the most recent time the mirrored window was activated via a
    * clone click, or `null` if no activation has happened yet.
@@ -116,13 +134,13 @@ export interface WindowMirrorSnapshot {
  * thumbnails and routes a click on a clone back into a window activation
  * (`MetaWindow.activate`).
  *
- * For PoC step 3 the production implementation picks at most a single
- * eligible top-level window — enough to validate the three load-bearing
- * Mutter / Clutter API points (enumerate window actors, mirror via
- * `Clutter.Clone`, raise via `meta_window.activate(global.get_current_time())`)
- * — and tells the caller via the {@link mount} return value whether a clone
- * was actually attached. Later PoC steps will widen this port (multi-window
- * grid placement, per-zone routing) rather than replace it.
+ * For PoC step 4 the production implementation mirrors every eligible
+ * top-level window, routes each into one of four quadrant zones by
+ * `wm_class`, and auto-grids same-zone windows inside the zone rect. The
+ * {@link mount} return value still reflects whether *any* clone was
+ * attached, so the controller can keep the dimmer open even when no
+ * windows qualify. The port surface (`mount` / `unmount` / `snapshot`) is
+ * unchanged from step 3 — zone routing is an implementation detail.
  */
 export interface WindowMirrorPort {
   /**

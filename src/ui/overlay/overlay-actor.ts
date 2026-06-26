@@ -1,14 +1,15 @@
 /**
- * Overlay actor: full-monitor dimmer that hosts live window clones in its
- * center.
+ * Overlay actor: full-monitor dimmer that hosts live window clones routed
+ * into quadrant zones.
  *
- * The dimmer itself is reactive so it absorbs background clicks; the actual
- * "what does the user see in the middle" content is no longer owned by this
- * file. Starting from PoC step 3 it is supplied by the
- * {@link WindowMirrorPort} production implementation, which adds a live
- * `Clutter.Clone` as a child of the dimmer via {@link OverlayActor.getCloneContainer}.
- * The dimmer keeps using `Clutter.BinLayout` so any single clone child is
- * naturally centered without manual positioning.
+ * The dimmer itself is reactive so it absorbs background clicks. The
+ * "what does the user see" content is supplied by the
+ * {@link WindowMirrorPort} production implementation, which adds live
+ * `Clutter.Clone` actors as children of the dedicated clone container
+ * returned by {@link OverlayActor.getCloneContainer}. The clone container
+ * uses `Clutter.FixedLayout` so the window mirror can position each clone
+ * by absolute monitor-relative coordinates (zone routing + auto-grid
+ * happens in `gnome-window-mirror.ts` / `zone-layout.ts`).
  */
 
 import Clutter from 'gi://Clutter';
@@ -22,6 +23,7 @@ const DIMMER_STYLE = 'background-color: rgba(0, 0, 0, 0.5);';
 
 export class OverlayActor implements OverlayActorPort {
   private dimmer: St.Widget | null = null;
+  private cloneContainer: St.Widget | null = null;
   private dimmerMotionId: number | null = null;
   private cornerLatched = false;
   private cornerReenterHandler: (() => void) | null = null;
@@ -54,9 +56,28 @@ export class OverlayActor implements OverlayActorPort {
       y: monitor.y,
       width: monitor.width,
       height: monitor.height,
-      layout_manager: new Clutter.BinLayout(),
+      // FixedLayout lets the clone container (and the window mirror that
+      // populates it) place children by absolute monitor-relative
+      // coordinates. BinLayout would force-center every child, breaking
+      // zone routing.
+      layout_manager: new Clutter.FixedLayout(),
     });
     dimmer.add_style_class_name('zatto-overlay-dimmer');
+
+    // Dedicated child container for clones. Keeping clones in their own
+    // container (rather than attaching them directly to the dimmer) keeps
+    // the dimmer free to host other chrome later (e.g. zone outlines,
+    // labels) without those decorations sharing the clones' input routing.
+    const cloneContainer = new St.Widget({
+      x: 0,
+      y: 0,
+      width: monitor.width,
+      height: monitor.height,
+      reactive: false,
+      layout_manager: new Clutter.FixedLayout(),
+    });
+    cloneContainer.add_style_class_name('zatto-overlay-clones');
+    dimmer.add_child(cloneContainer);
 
     // Re-entry detection: the chrome-level `HotCornerTrigger` is a sibling of
     // the dimmer, not a descendant, so it stops receiving pointer events the
@@ -90,6 +111,7 @@ export class OverlayActor implements OverlayActorPort {
 
     safeAddChrome(dimmer);
     this.dimmer = dimmer;
+    this.cloneContainer = cloneContainer;
     this.mounted = true;
   }
 
@@ -120,14 +142,14 @@ export class OverlayActor implements OverlayActorPort {
   }
 
   /**
-   * The container child clones should be parented to. Today this is the
-   * dimmer itself (whose `Clutter.BinLayout` naturally centers a single
-   * child); kept as a dedicated method so future layouts (multi-clone grid)
-   * can swap in a sibling container without touching the
-   * {@link WindowMirrorPort} production code that calls this.
+   * The dedicated child container clones are parented to. It uses
+   * `Clutter.FixedLayout` so the {@link WindowMirrorPort} production
+   * implementation can position each clone at an absolute monitor-relative
+   * coordinate (zone routing + auto-grid lives in `gnome-window-mirror.ts`
+   * and `zone-layout.ts`).
    */
   getCloneContainer(): St.Widget | null {
-    return this.dimmer;
+    return this.cloneContainer;
   }
 
   /** Unmount and destroy. Idempotent. */
@@ -138,9 +160,13 @@ export class OverlayActor implements OverlayActorPort {
     }
     if (this.dimmer !== null) {
       Main.layoutManager.removeChrome(this.dimmer);
+      // The clone container is a child of the dimmer and gets destroyed
+      // implicitly when the parent is destroyed; null the reference so
+      // `getCloneContainer()` does not hand out a dangling widget.
       this.dimmer.destroy();
       this.dimmer = null;
     }
+    this.cloneContainer = null;
     this.mounted = false;
     this.visible = false;
     this.cornerLatched = false;
