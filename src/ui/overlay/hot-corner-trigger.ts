@@ -18,6 +18,15 @@
  * positioned at (monitor.x, monitor.y + monitor.height - 5). It is invisible
  * (`opacity: 0`) but reactive, so it fires `enter-event` without any visual
  * disruption.
+ *
+ * Activities-Overview suppression: Clutter performs a stage repick whenever
+ * pointer grabs are acquired/released or the reactive actor graph changes
+ * substantially. The `Main.overview` showing/hidden lifecycle does both, and
+ * during a repick Clutter synthesizes `enter`/`leave` events on the actor now
+ * under the cursor even with no physical cursor motion. Our reactive 5x5
+ * chrome actor gets caught in that synthesis and spuriously fires
+ * `enter-event`. We mirror Shell's own `Layout.HotCorner` guard: while the
+ * Overview is active, ignore `enter-event` entirely.
  */
 
 import Clutter from 'gi://Clutter';
@@ -39,6 +48,9 @@ export class HotCornerTrigger implements HotCornerPort {
   private actor: St.Widget | null = null;
   private enterHandlerId: number | null = null;
   private handler: (() => void) | null = null;
+  private suppressed = false;
+  private overviewShowingId: number | null = null;
+  private overviewHiddenId: number | null = null;
 
   /** Register the single enter handler. Must be set before {@link enable}. */
   onEnter(handler: () => void): void {
@@ -67,16 +79,36 @@ export class HotCornerTrigger implements HotCornerPort {
     actor.add_style_class_name('zatto-hotcorner-trigger');
 
     this.enterHandlerId = actor.connect('enter-event', () => {
+      if (this.suppressed || Main.overview.visible) {
+        return Clutter.EVENT_PROPAGATE;
+      }
       this.handler?.();
       return Clutter.EVENT_PROPAGATE;
     });
 
     safeAddChrome(actor);
     this.actor = actor;
+
+    this.overviewShowingId = Main.overview.connect('showing', () => {
+      this.suppressed = true;
+    });
+    this.overviewHiddenId = Main.overview.connect('hidden', () => {
+      this.suppressed = false;
+    });
   }
 
   /** Tear down the corner actor. Idempotent. */
   disable(): void {
+    if (this.overviewShowingId !== null) {
+      Main.overview.disconnect(this.overviewShowingId);
+      this.overviewShowingId = null;
+    }
+    if (this.overviewHiddenId !== null) {
+      Main.overview.disconnect(this.overviewHiddenId);
+      this.overviewHiddenId = null;
+    }
+    this.suppressed = false;
+
     if (this.actor !== null) {
       if (this.enterHandlerId !== null) {
         this.actor.disconnect(this.enterHandlerId);
