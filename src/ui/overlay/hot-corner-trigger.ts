@@ -80,17 +80,7 @@ export class HotCornerTrigger implements HotCornerPort {
 
     this.enterHandlerId = actor.connect('enter-event', () => {
       if (this.suppressed || Main.overview.visible) {
-        if (__DEV__) {
-          console.log(
-            `[Zatto] hot-corner enter-event suppressed (suppressed=${this.suppressed}, overview.visible=${Main.overview.visible})`
-          );
-        }
         return Clutter.EVENT_PROPAGATE;
-      }
-      if (__DEV__) {
-        console.log(
-          `[Zatto] hot-corner enter-event accepted (overview.visible=${Main.overview.visible})`
-        );
       }
       this.handler?.();
       return Clutter.EVENT_PROPAGATE;
@@ -101,15 +91,9 @@ export class HotCornerTrigger implements HotCornerPort {
 
     this.overviewShowingId = Main.overview.connect('showing', () => {
       this.suppressed = true;
-      if (__DEV__) {
-        console.log('[Zatto] Main.overview "showing" fired');
-      }
     });
     this.overviewHiddenId = Main.overview.connect('hidden', () => {
       this.suppressed = false;
-      if (__DEV__) {
-        console.log('[Zatto] Main.overview "hidden" fired');
-      }
     });
   }
 
