@@ -184,7 +184,11 @@ export class GnomeWindowMirror implements WindowMirrorPort {
   ): Record<string, { actor: Meta.WindowActor; win: Meta.Window }[]> {
     const grouped: Record<string, { actor: Meta.WindowActor; win: Meta.Window }[]> = {};
     for (const entry of eligible) {
-      const zone = resolveZone(this.config, entry.win.get_wm_class());
+      const zone = resolveZone(
+        this.config,
+        entry.win.get_wm_class(),
+        entry.win.get_wm_class_instance()
+      );
       if (zone === null) {
         continue;
       }
