@@ -122,7 +122,12 @@ export class OverlayController {
     // Unmount any live clones BEFORE destroying the actor so the clone
     // children get a chance to disconnect their click handlers cleanly
     // instead of being torn down implicitly with the parent dimmer.
-    this.windowMirror.unmount();
+    // Force the synchronous path because the actor tree is about to be
+    // destroyed — easing children of a doomed parent wastes work and
+    // risks fired-after-destroy `onComplete` callbacks. Normal close
+    // paths (corner re-enter, Esc, clone click) keep the animated
+    // default by passing no options.
+    this.windowMirror.unmount({ immediate: true });
     this.actor.destroy();
 
     if (this.unsubscribeFsm !== null) {

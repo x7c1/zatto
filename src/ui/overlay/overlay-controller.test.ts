@@ -162,6 +162,39 @@ describe('OverlayController', () => {
     // handler is disconnected explicitly, not implicitly via parent
     // destruction.
     expect(windowMirror.unmountCount).toBeGreaterThanOrEqual(1);
+    // disable() must force the synchronous unmount path: easing into a
+    // doomed parent is wasted work and risks fire-after-destroy
+    // callbacks. Normal close paths (corner re-enter, Esc, clone click)
+    // are covered separately below.
+    expect(windowMirror.lastUnmountImmediate).toBe(true);
+  });
+
+  it('uses the animated unmount path for user-driven close paths', () => {
+    // The opposite of the disable() invariant above: when the user
+    // dismisses via Esc, the corner sensor, or a clone click, the
+    // overlay's actor tree stays alive long enough for the unmount
+    // ease to land on screen, so we must NOT force the immediate path.
+    // Sample all three user-driven paths in one test rather than
+    // duplicating the setup boilerplate per path.
+    const samples = ['esc', 'corner', 'click'] as const;
+    for (const path of samples) {
+      const { actor, hotCorner, modalGrab, windowMirror, advance } = setup({ debounceMs: 100 });
+      hotCorner.fireEnter();
+      advance(150); // clear the debounce window for the corner-reenter case
+
+      if (path === 'esc') {
+        modalGrab.fireEsc();
+      } else if (path === 'corner') {
+        actor.simulateCornerReenter();
+      } else {
+        windowMirror.simulateActivate(1_700_000_000_000);
+      }
+
+      const lastImmediate = windowMirror.lastUnmountImmediate;
+      // Either explicitly false or undefined (no options passed) is
+      // acceptable — both leave the port free to play the unmount ease.
+      expect(lastImmediate === true).toBe(false);
+    }
   });
 
   it('ignores hot-corner enters that arrive after disable()', () => {

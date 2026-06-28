@@ -2,13 +2,14 @@
  * Internal JSON-shaped configuration boundary for the zone picker.
  *
  * Step 4 hardcoded the zone rectangles, the `wm_class` → zone routing
- * table, the fallback zone, and the per-cell padding across two pure
- * modules and one GJS choreographer. This module collects all four into
- * a single {@link ZoneConfig} record so the rest of the overlay stack
- * receives them as one injected dependency. The shape is intentionally
- * a plain JSON-serializable object: future PoC steps (file loader,
- * GSettings backend, prefs UI) will plug in here without rippling
- * through consumers.
+ * table, the fallback zone, and the inter-window gap across two pure
+ * modules and one GJS choreographer. This module collects all of those
+ * — together with the step 5b matcher pipeline and the step 5c
+ * animation settings — into a single {@link ZoneConfig} record so the
+ * rest of the overlay stack receives them as one injected dependency.
+ * The shape is intentionally a plain JSON-serializable object: future
+ * PoC steps (file loader, GSettings backend, prefs UI) will plug in
+ * here without rippling through consumers.
  *
  * {@link DEFAULT_ZONE_CONFIG} is the source of truth for production
  * wiring today. `extension.ts` hands it to `GnomeWindowMirror` directly;
@@ -45,6 +46,37 @@ import type { FractionalRect, ZoneKey } from './zone-layout.js';
 export type MatchRule =
   | { readonly kind: 'prefix'; readonly pattern: string; readonly zone: ZoneKey }
   | { readonly kind: 'suffixStrip'; readonly suffix: string };
+
+/**
+ * Identifier for the easing curve applied to clone mount/unmount eases.
+ *
+ * Kept as a small string-typed enum (rather than a raw
+ * `Clutter.AnimationMode` value) so {@link ZoneConfig} stays plain JSON
+ * — loadable from a file or GSettings without runtime adapters — and so
+ * the production `GnomeWindowMirror` is the single place that maps
+ * these strings to `Clutter.AnimationMode` constants.
+ */
+export type EasingKey = 'easeOutQuad' | 'easeOutCubic' | 'linear';
+
+/**
+ * Animation settings for the overlay's clone mount / unmount eases.
+ *
+ * - `enabled` is the master switch. When `false`, the overlay falls
+ *   back to instant `set_position` / `set_size` (the step 5b behavior),
+ *   regardless of system or per-curve settings. The production
+ *   `GnomeWindowMirror` AND additionally bows to the user's
+ *   `org.gnome.desktop.interface.enable-animations` GSettings, so
+ *   reduced-motion sessions stay still even with `enabled: true`.
+ * - `durationMs` is the ease duration in wall-clock ms. The default
+ *   value targets the same perceived speed as the Activities Overview.
+ * - `easing` selects the curve. {@link EasingKey} keeps the wire format
+ *   independent of `Clutter.AnimationMode` integers.
+ */
+export interface AnimationConfig {
+  readonly enabled: boolean;
+  readonly durationMs: number;
+  readonly easing: EasingKey;
+}
 
 /**
  * Everything the zone picker needs to lay out windows. All fields are
@@ -88,12 +120,19 @@ export interface ZoneConfig {
    */
   readonly fallbackZone: ZoneKey | null;
   /**
-   * Padding (in monitor pixels) applied to every grid cell so adjacent
-   * clones do not visually touch. `0` disables the gutter. Negative
-   * values are rejected by the test guard since they would expand the
-   * cell rather than shrink it.
+   * Pixel gap between adjacent packed windows within a zone — both
+   * inter-item (within a row) and inter-row. `0` disables the gutter.
+   * Negative values are rejected by the test guard since they would
+   * make neighbors overlap.
+   *
+   * Semantically this is "gap between windows", not "padding around
+   * each cell": step 5c replaced the uniform-grid + centered-fit
+   * pipeline with a justified-row packer where items already sit flush
+   * against each other along the row, so there is no longer a per-cell
+   * padding region to shrink — only the gutter between neighbors. The
+   * rename from `cellPaddingPx` is a deliberate signal of that shift.
    */
-  readonly cellPaddingPx: number;
+  readonly windowGapPx: number;
   /**
    * When `true` (default), if neither {@link appZone} nor
    * {@link appZoneRules} resolves the primary `wm_class`, the whole
@@ -105,14 +144,22 @@ export interface ZoneConfig {
    * but the instance is recognizable.
    */
   readonly wmClassInstanceFallback: boolean;
+  /**
+   * Mount / unmount animation settings. See {@link AnimationConfig}.
+   * The production `GnomeWindowMirror` honors this on top of the user's
+   * system-wide reduced-motion preference — neither side overrides the
+   * other in the "on" direction, but either can turn easing off.
+   */
+  readonly animation: AnimationConfig;
 }
 
 /**
  * Production default. Mostly byte-equivalent to the step 4/5 wiring —
  * the four quadrants, the same canonical `wm_class` table, `bottomRight`
- * as the fallback, an 8 px cell gutter — plus the step 5b matcher
- * pipeline: snap-suffix stripping, a Chrome PWA prefix collapse, and
- * `wm_class_instance` fallback turned on.
+ * as the fallback, an 8 px inter-window gap — plus the step 5b matcher
+ * pipeline (snap-suffix stripping, a Chrome PWA prefix collapse, and
+ * `wm_class_instance` fallback) and the step 5c mount/unmount ease
+ * (220 ms `easeOutQuad`).
  *
  * Note the deliberate Vivaldi cleanup: the legacy `Vivaldi-snap` entry
  * is removed in favor of `Vivaldi: 'topRight'`. The suffix-strip rule
@@ -171,6 +218,11 @@ export const DEFAULT_ZONE_CONFIG: ZoneConfig = {
     { kind: 'prefix', pattern: 'chrome-', zone: 'topRight' },
   ],
   fallbackZone: 'bottomRight',
-  cellPaddingPx: 8,
+  windowGapPx: 8,
   wmClassInstanceFallback: true,
+  animation: {
+    enabled: true,
+    durationMs: 220,
+    easing: 'easeOutQuad',
+  },
 };

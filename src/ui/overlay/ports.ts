@@ -163,8 +163,18 @@ export interface WindowMirrorPort {
    * the overlay. The port supports exactly one handler per `mount()` call.
    */
   mount(onActivated: () => void): boolean;
-  /** Unmount any clones currently attached. Must be idempotent. */
-  unmount(): void;
+  /**
+   * Unmount any clones currently attached. Must be idempotent.
+   *
+   * When `options.immediate` is `true`, implementations must tear the
+   * clones down synchronously without playing the unmount ease, even
+   * when easing is otherwise enabled. The controller uses this on the
+   * `disable()` path where the actor tree is about to be destroyed —
+   * easing children of a doomed parent wastes work and risks
+   * fired-after-destroy callbacks. Normal close paths (corner re-enter,
+   * Esc, clone click) pass no options and get the animated teardown.
+   */
+  unmount(options?: { readonly immediate?: boolean }): void;
   /** Cheap state snapshot for the D-Bus Inspect endpoint. */
   snapshot(): WindowMirrorSnapshot;
 }
