@@ -181,12 +181,16 @@ describe('OverlayController', () => {
     it('reports closed state with no hot-corner history initially', () => {
       const { controller } = setup();
 
+      // The fake mirror starts with an empty `byZone` (no clones
+      // mounted yet); the production mirror would seed the configured
+      // zone keys at zero, but the snapshot contract only guarantees
+      // that the values sum to `clonedCount`, not which zones appear.
       expect(controller.snapshot()).toEqual({
         overlay: { state: 'closed', visible: false },
         hotCorner: { lastEnterAt: null },
         windowMirror: {
           clonedCount: 0,
-          byZone: { topLeft: 0, topRight: 0, bottomLeft: 0, bottomRight: 0 },
+          byZone: {},
           lastActivatedAt: null,
         },
       });
@@ -203,7 +207,7 @@ describe('OverlayController', () => {
         hotCorner: { lastEnterAt: 1_700_000_000_000 },
         windowMirror: {
           clonedCount: 1,
-          byZone: { topLeft: 0, topRight: 0, bottomLeft: 0, bottomRight: 1 },
+          byZone: { bottomRight: 1 },
           lastActivatedAt: null,
         },
       });

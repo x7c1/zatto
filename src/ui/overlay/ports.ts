@@ -17,6 +17,8 @@
  * - {@link WindowMirrorPort} -> `GnomeWindowMirror` (`gnome-window-mirror.ts`)
  */
 
+import type { ZoneConfig } from './zone-config.js';
+
 /**
  * Bottom-left hot corner. Fires {@link HotCornerPort.onEnter} every time the
  * cursor enters the trigger zone; the controller is responsible for debouncing
@@ -97,20 +99,18 @@ export interface ModalGrabPort {
 }
 
 /**
- * Per-zone breakdown of mounted clones. Keys match the four quadrant
- * identifiers exported by `zone-layout.ts`; each value is the count of
- * clones currently mounted in that zone (zero if the zone is empty).
+ * Per-zone breakdown of mounted clones. Keys are zone identifiers
+ * (whatever the active {@link ZoneConfig} defines — four quadrants by
+ * default, but loader-provided configs may add or replace them); each
+ * value is the count of clones currently mounted in that zone (zero if
+ * the zone is empty).
  *
- * Kept here (not imported from `zone-layout.ts`) so the port surface stays
- * self-describing and the Inspect endpoint contract does not transitively
- * pull in layout-side types.
+ * Kept as a plain string-keyed record so the port surface stays
+ * self-describing and the Inspect endpoint contract does not bake in
+ * the production zone set. Consumers that need stable key order should
+ * iterate over `zoneConfig.zones` from the same snapshot.
  */
-export interface WindowMirrorByZone {
-  readonly topLeft: number;
-  readonly topRight: number;
-  readonly bottomLeft: number;
-  readonly bottomRight: number;
-}
+export type WindowMirrorByZone = Readonly<Record<string, number>>;
 
 /**
  * Read-only snapshot of the window-mirror state exposed through the D-Bus
@@ -127,6 +127,15 @@ export interface WindowMirrorSnapshot {
    * clone click, or `null` if no activation has happened yet.
    */
   readonly lastActivatedAt: number | null;
+  /**
+   * The {@link ZoneConfig} the mirror is currently using to lay out
+   * clones. Optional only so test fakes can omit it; the production
+   * `GnomeWindowMirror` always populates this field. Echoing the live
+   * config in the Inspect snapshot lets external tooling (and the
+   * human running `gdbus`) verify which routing table and which zone
+   * rectangles are in effect without poking at the extension source.
+   */
+  readonly zoneConfig?: ZoneConfig;
 }
 
 /**

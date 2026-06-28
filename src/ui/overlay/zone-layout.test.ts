@@ -1,29 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  computeGrid,
-  fitContentToCell,
-  rectToPixels,
-  ZONE_KEYS,
-  ZONE_RECTS,
-} from './zone-layout.js';
-
-describe('ZONE_RECTS', () => {
-  it('covers exactly the four quadrants of the unit square', () => {
-    // Sanity: the four hardcoded rects must tile the [0,1]^2 plane with no
-    // overlap or gap, otherwise some pixels of the monitor would either be
-    // unreachable or claimed twice when we paint zones.
-    let area = 0;
-    for (const key of ZONE_KEYS) {
-      const r = ZONE_RECTS[key];
-      area += r.w * r.h;
-    }
-    expect(area).toBeCloseTo(1, 10);
-  });
-
-  it('exposes the four expected keys in stable order', () => {
-    expect(ZONE_KEYS).toEqual(['topLeft', 'topRight', 'bottomLeft', 'bottomRight']);
-  });
-});
+import { computeGrid, fitContentToCell, rectToPixels } from './zone-layout.js';
 
 describe('rectToPixels', () => {
   it('scales fractional rect by monitor dimensions', () => {

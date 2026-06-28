@@ -17,13 +17,6 @@ import type {
   WindowMirrorSnapshot,
 } from './ports.js';
 
-const ZERO_BY_ZONE: WindowMirrorByZone = {
-  topLeft: 0,
-  topRight: 0,
-  bottomLeft: 0,
-  bottomRight: 0,
-};
-
 export class FakeHotCorner implements HotCornerPort {
   enabled = false;
   private handler: (() => void) | null = null;
@@ -139,19 +132,20 @@ export class FakeWindowMirror implements WindowMirrorPort {
    * clone in `bottomRight` (the production fallback zone), so existing
    * tests that don't care about routing keep working unchanged. Tests
    * that exercise multi-zone behavior overwrite this before firing the
-   * hot corner.
+   * hot corner. The key set is open — tests are free to add zones the
+   * production `ZoneConfig` would not define.
    */
-  nextMountByZone: WindowMirrorByZone = { ...ZERO_BY_ZONE, bottomRight: 1 };
+  nextMountByZone: Record<string, number> = { bottomRight: 1 };
   /** Wall-clock epoch ms recorded on a simulated clone click. */
   lastActivatedAt: number | null = null;
-  private byZone: WindowMirrorByZone = ZERO_BY_ZONE;
+  private byZone: WindowMirrorByZone = {};
   private activatedHandler: (() => void) | null = null;
 
   mount(onActivated: () => void): boolean {
     this.mountCount++;
     if (this.mountShouldFindNoWindow) {
       this.activatedHandler = null;
-      this.byZone = ZERO_BY_ZONE;
+      this.byZone = {};
       return false;
     }
     this.activatedHandler = onActivated;
@@ -162,7 +156,7 @@ export class FakeWindowMirror implements WindowMirrorPort {
   unmount(): void {
     this.unmountCount++;
     this.activatedHandler = null;
-    this.byZone = ZERO_BY_ZONE;
+    this.byZone = {};
   }
 
   snapshot(): WindowMirrorSnapshot {
@@ -189,5 +183,5 @@ export class FakeWindowMirror implements WindowMirrorPort {
 }
 
 function sumByZone(byZone: WindowMirrorByZone): number {
-  return byZone.topLeft + byZone.topRight + byZone.bottomLeft + byZone.bottomRight;
+  return Object.values(byZone).reduce((a, b) => a + b, 0);
 }

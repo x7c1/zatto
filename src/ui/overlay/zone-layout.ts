@@ -1,5 +1,5 @@
 /**
- * Pure layout primitives for the four-quadrant zone picker (PoC step 4).
+ * Pure geometry primitives consumed by `ZoneConfig`-driven layout.
  *
  * This module knows nothing about Clutter, Meta, St, or the wider GNOME
  * Shell. It deals in plain numbers so it can be unit-tested in vitest
@@ -8,23 +8,21 @@
  *
  * The contract is small on purpose:
  *
- *   - {@link ZONE_RECTS} carves the monitor into the four quadrants as
- *     fractional rects, so the same definition works at any resolution.
+ *   - {@link rectToPixels} converts a fractional zone rect into pixels
+ *     for a given monitor size.
  *   - {@link computeGrid} packs N items into a zone rect as a
  *     `ceil(sqrt(N))`-column grid of equal-sized cells.
  *   - {@link fitContentToCell} centers a source rectangle inside one
  *     cell while preserving its aspect ratio.
  *
- * Later PoC steps will replace {@link ZONE_RECTS} with a JSON-driven
- * configuration; the function shapes here are chosen so that swap stays
- * local to this module.
+ * The zone identifiers, the per-zone fractional rects, the `wm_class`
+ * routing table, the fallback choice, and the cell padding all live in
+ * `zone-config.ts`; this module never imports them. That separation is
+ * what lets a future loader swap the data without touching the math.
  */
 
 /** Identifiers for the four quadrant zones. */
 export type ZoneKey = 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight';
-
-/** All zone keys, in a stable order suitable for iteration / display. */
-export const ZONE_KEYS: readonly ZoneKey[] = ['topLeft', 'topRight', 'bottomLeft', 'bottomRight'];
 
 /**
  * Fractional rect within the monitor (`x`, `y`, `w`, `h` ∈ `[0, 1]`).
@@ -44,17 +42,6 @@ export interface PixelRect {
   readonly w: number;
   readonly h: number;
 }
-
-/**
- * Hardcoded zone definitions for PoC step 4. Each zone is exactly one
- * quadrant; step 5 replaces this constant with a JSON-driven layout.
- */
-export const ZONE_RECTS: Readonly<Record<ZoneKey, FractionalRect>> = {
-  topLeft: { x: 0, y: 0, w: 0.5, h: 0.5 },
-  topRight: { x: 0.5, y: 0, w: 0.5, h: 0.5 },
-  bottomLeft: { x: 0, y: 0.5, w: 0.5, h: 0.5 },
-  bottomRight: { x: 0.5, y: 0.5, w: 0.5, h: 0.5 },
-};
 
 /** Convert a fractional rect into a pixel rect inside a monitor of the given size. */
 export function rectToPixels(

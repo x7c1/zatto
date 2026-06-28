@@ -1,14 +1,13 @@
 /**
- * GNOME Shell production implementation of {@link WindowMirrorPort} for
- * PoC step 4.
+ * GNOME Shell production implementation of {@link WindowMirrorPort}.
  *
- * Step 3 mirrored a single window into the center of the dimmer. Step 4
- * enumerates every eligible top-level window, routes each to one of four
- * quadrant zones by its `wm_class`, and auto-grids same-zone windows
- * inside the zone rect with aspect-preserving cells. The layout math
- * itself lives in `zone-layout.ts` and the routing table in
- * `app-zone-map.ts` — both pure so they get covered by their own
- * vitest suites without a GJS shim.
+ * Enumerates every eligible top-level window, routes each to a zone by
+ * its `wm_class` using the injected {@link ZoneConfig}, and auto-grids
+ * same-zone windows inside the zone rect with aspect-preserving cells.
+ * The layout math itself lives in `zone-layout.ts`, the routing in
+ * `app-zone-map.ts`, and the config data in `zone-config.ts` — all
+ * pure so they get covered by their own vitest suites without a GJS
+ * shim.
  *
  * Three Mutter / Clutter API points this mirror sits on top of:
  *
@@ -23,6 +22,11 @@
  * `HotCornerTrigger` are `St.Widget`s and do not appear in
  * `global.get_window_actors()`, so the self-clone hazard from step 3's
  * notes still does not apply.
+ *
+ * A `null` resolved zone (when {@link ZoneConfig.fallbackZone} is
+ * `null` and the window's `wm_class` is unrouted) drops the window
+ * entirely: it is not mirrored, not counted in the snapshot, not
+ * placed anywhere on screen.
  */
 
 import Clutter from 'gi://Clutter';
@@ -30,18 +34,9 @@ import Meta from 'gi://Meta';
 import type St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { resolveZone } from './app-zone-map.js';
-import type { WindowMirrorByZone, WindowMirrorPort, WindowMirrorSnapshot } from './ports.js';
-import {
-  computeGrid,
-  fitContentToCell,
-  rectToPixels,
-  ZONE_KEYS,
-  ZONE_RECTS,
-  type ZoneKey,
-} from './zone-layout.js';
-
-/** Padding inside each grid cell so adjacent clones don't visually touch. */
-const CELL_PADDING_PX = 8;
+import type { WindowMirrorPort, WindowMirrorSnapshot } from './ports.js';
+import type { ZoneConfig } from './zone-config.js';
+import { computeGrid, fitContentToCell, rectToPixels, type ZoneKey } from './zone-layout.js';
 
 /** Source of window actors. Indirected so tests of this module can stub it. */
 export type WindowActorSource = () => Meta.WindowActor[];
@@ -69,6 +64,13 @@ export class GnomeWindowMirror implements WindowMirrorPort {
      * teardown.
      */
     private readonly getContainer: () => St.Widget | null,
+    /**
+     * Zone definitions, routing table, fallback zone, and cell padding —
+     * everything that decides where and how clones land. Injected so
+     * future PoC steps can swap the config source (file / GSettings /
+     * prefs UI) without touching this class.
+     */
+    private readonly config: ZoneConfig,
     /**
      * Source of window actors. Defaults to `global.get_window_actors()`;
      * the indirection exists so future PoC steps can wrap or filter the
@@ -108,9 +110,9 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     }
 
     const grouped = this.groupByZone(eligible);
-    for (const zone of ZONE_KEYS) {
+    for (const zone of Object.keys(this.config.zones) as ZoneKey[]) {
       const entries = grouped[zone];
-      if (entries.length === 0) {
+      if (entries === undefined || entries.length === 0) {
         continue;
       }
       this.layoutZone(container, monitor, zone, entries, onActivated);
@@ -132,27 +134,22 @@ export class GnomeWindowMirror implements WindowMirrorPort {
   }
 
   snapshot(): WindowMirrorSnapshot {
-    // Accumulate into a mutable counter map first; `WindowMirrorByZone`
-    // is readonly so we build it via a single object literal at the end.
-    const counters: Record<ZoneKey, number> = {
-      topLeft: 0,
-      topRight: 0,
-      bottomLeft: 0,
-      bottomRight: 0,
-    };
-    for (const mounted of this.clones) {
-      counters[mounted.zone]++;
+    // Seed counts at zero for every configured zone so the snapshot
+    // exposes a stable key set even when some zones are empty. Walk
+    // `Object.keys(this.config.zones)` (not a hardcoded list) so future
+    // configs with extra zones surface in the snapshot automatically.
+    const byZone: Record<string, number> = {};
+    for (const zone of Object.keys(this.config.zones)) {
+      byZone[zone] = 0;
     }
-    const byZone: WindowMirrorByZone = {
-      topLeft: counters.topLeft,
-      topRight: counters.topRight,
-      bottomLeft: counters.bottomLeft,
-      bottomRight: counters.bottomRight,
-    };
+    for (const mounted of this.clones) {
+      byZone[mounted.zone] = (byZone[mounted.zone] ?? 0) + 1;
+    }
     return {
       clonedCount: this.clones.length,
       byZone,
       lastActivatedAt: this.lastActivatedAt,
+      zoneConfig: this.config,
     };
   }
 
@@ -175,19 +172,28 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     return out;
   }
 
-  /** Bucket eligible windows by their resolved zone. */
+  /**
+   * Bucket eligible windows by their resolved zone. Windows whose
+   * `wm_class` is unrouted and whose config has `fallbackZone: null`
+   * are skipped entirely — they don't appear in the result, so the
+   * caller never mounts or counts them. That's how the "drop unrouted
+   * windows" mode materializes at the GJS layer.
+   */
   private groupByZone(
     eligible: { actor: Meta.WindowActor; win: Meta.Window }[]
-  ): Record<ZoneKey, { actor: Meta.WindowActor; win: Meta.Window }[]> {
-    const grouped: Record<ZoneKey, { actor: Meta.WindowActor; win: Meta.Window }[]> = {
-      topLeft: [],
-      topRight: [],
-      bottomLeft: [],
-      bottomRight: [],
-    };
+  ): Record<string, { actor: Meta.WindowActor; win: Meta.Window }[]> {
+    const grouped: Record<string, { actor: Meta.WindowActor; win: Meta.Window }[]> = {};
     for (const entry of eligible) {
-      const zone = resolveZone(entry.win.get_wm_class());
-      grouped[zone].push(entry);
+      const zone = resolveZone(this.config, entry.win.get_wm_class());
+      if (zone === null) {
+        continue;
+      }
+      let bucket = grouped[zone];
+      if (bucket === undefined) {
+        bucket = [];
+        grouped[zone] = bucket;
+      }
+      bucket.push(entry);
     }
     return grouped;
   }
@@ -204,14 +210,14 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     entries: { actor: Meta.WindowActor; win: Meta.Window }[],
     onActivated: () => void
   ): void {
-    const zoneRect = rectToPixels(ZONE_RECTS[zone], monitor);
+    const zoneRect = rectToPixels(this.config.zones[zone], monitor);
     const cells = computeGrid(zoneRect, entries.length);
     for (let i = 0; i < entries.length; i++) {
       const { actor, win } = entries[i];
       const cell = cells[i];
       const frame = win.get_frame_rect();
       const placed = fitContentToCell(cell, frame.width, frame.height, {
-        padding: CELL_PADDING_PX,
+        padding: this.config.cellPaddingPx,
       });
       if (placed.w <= 0 || placed.h <= 0) {
         // Cell too small after padding — skip rather than mount an
