@@ -23,6 +23,30 @@
 import type { FractionalRect, ZoneKey } from './zone-layout.js';
 
 /**
+ * Non-exact match rule applied after the exact {@link ZoneConfig.appZone}
+ * lookup misses.
+ *
+ * - `'prefix'`: case-insensitive `startsWith` against the candidate; on
+ *   match, the rule's `zone` wins outright (no further re-lookup). Use
+ *   this for families of `wm_class` values that share a prefix and route
+ *   to the same zone — e.g. `chrome-<appid>-Default` Chrome PWAs which
+ *   we cannot enumerate ahead of time.
+ * - `'suffixStrip'`: if the candidate ends with `suffix`
+ *   (case-insensitive), strip it once and retry the EXACT
+ *   {@link ZoneConfig.appZone} map only — the stripped form does NOT
+ *   re-enter the rule list (so suffix rules are not recursive and a
+ *   `suffixStrip` cannot chain into a `prefix`). This lets a single
+ *   `Vivaldi: topRight` entry in the exact map cover the snap-packaged
+ *   `Vivaldi-snap` without an explicit duplicate.
+ *
+ * Rules in {@link ZoneConfig.appZoneRules} are evaluated in array order;
+ * first match wins. Order therefore encodes priority.
+ */
+export type MatchRule =
+  | { readonly kind: 'prefix'; readonly pattern: string; readonly zone: ZoneKey }
+  | { readonly kind: 'suffixStrip'; readonly suffix: string };
+
+/**
  * Everything the zone picker needs to lay out windows. All fields are
  * plain JSON values (numbers, strings, nested records, `null`) so a
  * loader can produce one from a file or GSettings without runtime
@@ -49,6 +73,14 @@ export interface ZoneConfig {
    */
   readonly appZone: Readonly<Record<string, ZoneKey>>;
   /**
+   * Ordered match rules consulted after the exact {@link appZone} lookup
+   * misses. Each rule is evaluated in array order, first match wins.
+   * See {@link MatchRule} for the per-kind semantics. The rules cover
+   * real-world `wm_class` variability the exact map can't enumerate —
+   * snap suffixes, Chrome PWA prefixes, etc.
+   */
+  readonly appZoneRules: ReadonlyArray<MatchRule>;
+  /**
    * Zone that catches any window whose `wm_class` is not in
    * {@link appZone}. Set to `null` to drop unrouted windows entirely
    * (they are skipped — not mirrored, not counted) instead of bucketing
@@ -62,12 +94,31 @@ export interface ZoneConfig {
    * cell rather than shrink it.
    */
   readonly cellPaddingPx: number;
+  /**
+   * When `true` (default), if neither {@link appZone} nor
+   * {@link appZoneRules} resolves the primary `wm_class`, the whole
+   * resolution pipeline is retried against `wm_class_instance` (a
+   * sibling property on `MetaWindow`). The instance pass is skipped
+   * when the instance string equals the class string
+   * (case-insensitive) — which is the common case — or when this flag
+   * is `false`. Useful for apps where the primary class is unhelpful
+   * but the instance is recognizable.
+   */
+  readonly wmClassInstanceFallback: boolean;
 }
 
 /**
- * Production default. Byte-equivalent to the step 4 wiring: the four
- * quadrants, the same `wm_class` table (canonical + lowercase + snap
- * doublets), `bottomRight` as the fallback, and an 8 px cell gutter.
+ * Production default. Mostly byte-equivalent to the step 4/5 wiring —
+ * the four quadrants, the same canonical `wm_class` table, `bottomRight`
+ * as the fallback, an 8 px cell gutter — plus the step 5b matcher
+ * pipeline: snap-suffix stripping, a Chrome PWA prefix collapse, and
+ * `wm_class_instance` fallback turned on.
+ *
+ * Note the deliberate Vivaldi cleanup: the legacy `Vivaldi-snap` entry
+ * is removed in favor of `Vivaldi: 'topRight'`. The suffix-strip rule
+ * recovers the snap variant via re-lookup, which demonstrates the rule
+ * is doing real work and avoids the duplicate. `firefox_firefox` stays
+ * as-is because that's a Mutter instance-name quirk, not a snap suffix.
  *
  * Pinned by tests so reviewers see any silent default drift in a diff.
  */
@@ -95,7 +146,7 @@ export const DEFAULT_ZONE_CONFIG: ZoneConfig = {
     firefox_firefox: 'topRight',
     'Mozilla Firefox': 'topRight',
     Chromium: 'topRight',
-    'Vivaldi-snap': 'topRight',
+    Vivaldi: 'topRight',
 
     // bottom-left: chat / comms
     Slack: 'bottomLeft',
@@ -107,6 +158,19 @@ export const DEFAULT_ZONE_CONFIG: ZoneConfig = {
     // move once user-defined routing lands.
     'org.gnome.Settings': 'bottomLeft',
   },
+  appZoneRules: [
+    // Strip snap suffixes and re-lookup the exact map. Covers Vivaldi
+    // (`Vivaldi-snap` -> `Vivaldi`) and any other distro that tags snap
+    // builds with one of these suffixes. Two separate rules instead of
+    // one regex to keep the data shape declarative.
+    { kind: 'suffixStrip', suffix: '-snap' },
+    { kind: 'suffixStrip', suffix: '_snap' },
+    // Chrome PWAs report a per-app id like `chrome-<appid>-Default`. We
+    // can't enumerate them ahead of time, so collapse the entire family
+    // into the browsers zone with a prefix rule.
+    { kind: 'prefix', pattern: 'chrome-', zone: 'topRight' },
+  ],
   fallbackZone: 'bottomRight',
   cellPaddingPx: 8,
+  wmClassInstanceFallback: true,
 };

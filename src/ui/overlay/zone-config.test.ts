@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_ZONE_CONFIG } from './zone-config.js';
+import { DEFAULT_ZONE_CONFIG, type MatchRule } from './zone-config.js';
 import type { FractionalRect } from './zone-layout.js';
 
 describe('DEFAULT_ZONE_CONFIG.zones', () => {
@@ -63,6 +63,49 @@ describe('DEFAULT_ZONE_CONFIG.cellPaddingPx', () => {
     // in step 4's `gnome-window-mirror.ts`. A silent change here would
     // alter the visible layout without showing up in any other diff.
     expect(DEFAULT_ZONE_CONFIG.cellPaddingPx).toBe(8);
+  });
+});
+
+describe('DEFAULT_ZONE_CONFIG.appZoneRules', () => {
+  it('is non-empty (step 5b ships matcher rules by default)', () => {
+    // The whole point of step 5b is that the default config carries a
+    // matcher pipeline. An empty rules list would silently regress us
+    // to step 5 behavior.
+    expect(DEFAULT_ZONE_CONFIG.appZoneRules.length).toBeGreaterThan(0);
+  });
+
+  it('only routes prefix rules to known zone keys', () => {
+    // A prefix rule whose target zone isn't in `zones` would mount
+    // windows into nowhere. Suffix-strip rules don't carry a zone, so
+    // they don't need this guard.
+    const knownZones = new Set(Object.keys(DEFAULT_ZONE_CONFIG.zones));
+    for (const rule of DEFAULT_ZONE_CONFIG.appZoneRules) {
+      if (rule.kind === 'prefix') {
+        expect(knownZones.has(rule.zone)).toBe(true);
+      }
+    }
+  });
+
+  it('pins the exact step 5b rule set for reviewer protection', () => {
+    // Reviewer protection against silent default drift, same shape as
+    // the fallback / cellPadding pins above. If a future change adds
+    // or removes a default rule, update this literal in the same commit
+    // so the intent is visible in review.
+    const expected: ReadonlyArray<MatchRule> = [
+      { kind: 'suffixStrip', suffix: '-snap' },
+      { kind: 'suffixStrip', suffix: '_snap' },
+      { kind: 'prefix', pattern: 'chrome-', zone: 'topRight' },
+    ];
+    expect(DEFAULT_ZONE_CONFIG.appZoneRules).toEqual(expected);
+  });
+});
+
+describe('DEFAULT_ZONE_CONFIG.wmClassInstanceFallback', () => {
+  it('defaults to true so the instance pass is on out of the box', () => {
+    // Step 5b ships the instance pass enabled by default. Flipping it
+    // off should be a deliberate config choice, never an accidental
+    // default change.
+    expect(DEFAULT_ZONE_CONFIG.wmClassInstanceFallback).toBe(true);
   });
 });
 
