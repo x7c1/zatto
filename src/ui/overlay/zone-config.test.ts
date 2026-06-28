@@ -53,16 +53,40 @@ describe('DEFAULT_ZONE_CONFIG.fallbackZone', () => {
   });
 });
 
-describe('DEFAULT_ZONE_CONFIG.cellPaddingPx', () => {
+describe('DEFAULT_ZONE_CONFIG.windowGapPx', () => {
   it('is non-negative', () => {
-    expect(DEFAULT_ZONE_CONFIG.cellPaddingPx).toBeGreaterThanOrEqual(0);
+    expect(DEFAULT_ZONE_CONFIG.windowGapPx).toBeGreaterThanOrEqual(0);
   });
 
-  it('pins step 4 parity at 8 px', () => {
+  it('pins the inter-window gap at 8 px', () => {
     // Same rationale as the fallback pin: the 8 px gutter was hardcoded
     // in step 4's `gnome-window-mirror.ts`. A silent change here would
     // alter the visible layout without showing up in any other diff.
-    expect(DEFAULT_ZONE_CONFIG.cellPaddingPx).toBe(8);
+    // (Field renamed from `cellPaddingPx` in step 5c, same default.)
+    expect(DEFAULT_ZONE_CONFIG.windowGapPx).toBe(8);
+  });
+});
+
+describe('DEFAULT_ZONE_CONFIG.animation', () => {
+  it('is enabled out of the box', () => {
+    // Step 5c ships easing on by default; the system-wide reduced-motion
+    // preference still wins inside `GnomeWindowMirror`, so this only
+    // sets the master switch.
+    expect(DEFAULT_ZONE_CONFIG.animation.enabled).toBe(true);
+  });
+
+  it('pins the duration at 220 ms', () => {
+    // Matches the perceived speed of the Activities Overview. Reviewer
+    // protection against silent default drift, same shape as the
+    // fallback / windowGap pins above.
+    expect(DEFAULT_ZONE_CONFIG.animation.durationMs).toBe(220);
+  });
+
+  it('pins the curve at easeOutQuad', () => {
+    // Soft deceleration that feels like the overview. Other valid keys
+    // (`easeOutCubic`, `linear`) need to be a deliberate config choice
+    // rather than an accidental default change.
+    expect(DEFAULT_ZONE_CONFIG.animation.easing).toBe('easeOutQuad');
   });
 });
 

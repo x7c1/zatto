@@ -138,6 +138,13 @@ export class FakeWindowMirror implements WindowMirrorPort {
   nextMountByZone: Record<string, number> = { bottomRight: 1 };
   /** Wall-clock epoch ms recorded on a simulated clone click. */
   lastActivatedAt: number | null = null;
+  /**
+   * Record of every `unmount()` call's `immediate` flag (defaulting to
+   * `false` when omitted). Tests assert against this to verify the
+   * controller routes `disable()` through the immediate path while
+   * user-driven closes go through the animated one.
+   */
+  unmountCalls: Array<{ immediate: boolean }> = [];
   private byZone: WindowMirrorByZone = {};
   private activatedHandler: (() => void) | null = null;
 
@@ -153,10 +160,19 @@ export class FakeWindowMirror implements WindowMirrorPort {
     return sumByZone(this.byZone) > 0;
   }
 
-  unmount(): void {
+  unmount(options?: { readonly immediate?: boolean }): void {
     this.unmountCount++;
+    this.unmountCalls.push({ immediate: options?.immediate ?? false });
     this.activatedHandler = null;
     this.byZone = {};
+  }
+
+  /**
+   * Most recent `unmount()`'s `immediate` flag, or `undefined` if
+   * `unmount` has not been called. Sugar over `unmountCalls.at(-1)?.immediate`.
+   */
+  get lastUnmountImmediate(): boolean | undefined {
+    return this.unmountCalls.at(-1)?.immediate;
   }
 
   snapshot(): WindowMirrorSnapshot {

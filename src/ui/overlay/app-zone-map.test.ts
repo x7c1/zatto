@@ -107,7 +107,7 @@ describe('resolveZone with appZoneRules', () => {
       appZone: { 'chrome-gmail-Default': 'bottomLeft' },
       appZoneRules: [{ kind: 'prefix', pattern: 'chrome-', zone: 'topRight' }],
       fallbackZone: 'bottomRight',
-      cellPaddingPx: 0,
+      windowGapPx: 0,
       wmClassInstanceFallback: false,
     };
     expect(resolveZone(config, 'chrome-gmail-Default')).toBe('bottomLeft');
@@ -122,7 +122,7 @@ describe('resolveZone with appZoneRules', () => {
       appZone: { Vivaldi: 'topRight' },
       appZoneRules: [{ kind: 'suffixStrip', suffix: '-snap' }],
       fallbackZone: null,
-      cellPaddingPx: 0,
+      windowGapPx: 0,
       wmClassInstanceFallback: false,
     };
     expect(resolveZone(config, 'Vivaldi-snap')).toBe('topRight');
@@ -138,7 +138,7 @@ describe('resolveZone with appZoneRules', () => {
       appZone: { Vivaldi: 'topRight' },
       appZoneRules: [{ kind: 'suffixStrip', suffix: '-snap' }],
       fallbackZone: null,
-      cellPaddingPx: 0,
+      windowGapPx: 0,
       wmClassInstanceFallback: false,
     };
     expect(resolveZone(config, 'Vivaldi-snap-snap')).toBeNull();
@@ -156,7 +156,7 @@ describe('resolveZone with appZoneRules', () => {
         { kind: 'prefix', pattern: 'chrome-mail', zone: 'bottomLeft' },
       ],
       fallbackZone: null,
-      cellPaddingPx: 0,
+      windowGapPx: 0,
       wmClassInstanceFallback: false,
     };
     expect(resolveZone(config, 'chrome-mail-Default')).toBe('topRight');
@@ -170,7 +170,7 @@ describe('resolveZone with appZoneRules', () => {
       appZone: {},
       appZoneRules: [{ kind: 'prefix', pattern: 'chrome-', zone: 'topRight' }],
       fallbackZone: null,
-      cellPaddingPx: 0,
+      windowGapPx: 0,
       wmClassInstanceFallback: false,
     };
     expect(resolveZone(config, 'Chrome-FOO')).toBe('topRight');
@@ -185,7 +185,7 @@ describe('resolveZone with appZoneRules', () => {
       appZone: { Vivaldi: 'topRight' },
       appZoneRules: [{ kind: 'suffixStrip', suffix: '-snap' }],
       fallbackZone: null,
-      cellPaddingPx: 0,
+      windowGapPx: 0,
       wmClassInstanceFallback: false,
     };
     expect(resolveZone(config, 'Vivaldi-SNAP')).toBe('topRight');
@@ -200,7 +200,7 @@ describe('resolveZone with appZoneRules', () => {
       appZone: { 'some-instance': 'bottomLeft' },
       appZoneRules: [],
       fallbackZone: null,
-      cellPaddingPx: 0,
+      windowGapPx: 0,
       wmClassInstanceFallback: true,
     };
     expect(resolveZone(config, 'OpaqueClass', 'some-instance')).toBe('bottomLeft');
@@ -217,7 +217,7 @@ describe('resolveZone with appZoneRules', () => {
       appZone: {},
       appZoneRules: [],
       fallbackZone: 'bottomRight',
-      cellPaddingPx: 0,
+      windowGapPx: 0,
       wmClassInstanceFallback: true,
     };
     expect(resolveZone(config, 'OpaqueClass', 'OPAQUECLASS')).toBe('bottomRight');
@@ -231,7 +231,7 @@ describe('resolveZone with appZoneRules', () => {
       appZone: { 'some-instance': 'bottomLeft' },
       appZoneRules: [],
       fallbackZone: 'bottomRight',
-      cellPaddingPx: 0,
+      windowGapPx: 0,
       wmClassInstanceFallback: false,
     };
     expect(resolveZone(config, 'OpaqueClass', 'some-instance')).toBe('bottomRight');
@@ -249,7 +249,7 @@ describe('resolveZone with appZoneRules', () => {
         { kind: 'suffixStrip', suffix: '-snap' },
       ],
       fallbackZone: null,
-      cellPaddingPx: 0,
+      windowGapPx: 0,
       wmClassInstanceFallback: true,
     };
     expect(resolveZone(config, 'TotallyUnknown', 'AlsoUnknown')).toBeNull();
