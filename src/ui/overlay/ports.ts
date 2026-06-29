@@ -168,9 +168,11 @@ export interface RealWindowsVisibilitySnapshot {
  * Hides the user's real desktop windows while the overlay is open so the
  * live `Clutter.Clone` thumbnails are not visually mixed with the original
  * windows they mirror. The production implementation toggles
- * `global.window_group` and `global.top_window_group` — the same pattern
- * Mutter's built-in Activities Overview uses, which is documented-safe
- * with `Clutter.Clone` because clones keep painting their hidden sources.
+ * `global.window_group` only (NOT `top_window_group`, which contains
+ * shell-managed surfaces the shell coordinates on its own schedule — see
+ * `GnomeRealWindowsVisibility` for the full rationale). This is
+ * documented-safe with `Clutter.Clone` because clones keep painting their
+ * hidden sources.
  *
  * Safety contract — every implementation MUST honor this:
  *
@@ -181,18 +183,18 @@ export interface RealWindowsVisibilitySnapshot {
  * - {@link hide} and {@link show} are no-ops when `config.hideRealWindows`
  *   is `false`. Only {@link restore} bypasses the kill switch.
  * - Every write to `visible` / `opacity` is preceded by
- *   `remove_all_transitions()` on both groups, so a stale in-flight ease
- *   cannot resurrect a hidden state we just restored.
+ *   `remove_all_transitions()` on the window group, so a stale in-flight
+ *   ease cannot resurrect a hidden state we just restored.
  */
 export interface RealWindowsVisibilityPort {
-  /** Fade out (or snap) `window_group` + `top_window_group`. */
+  /** Fade out (or snap) `window_group`. */
   hide(): void;
-  /** Fade in (or snap back) `window_group` + `top_window_group`. */
+  /** Fade in (or snap back) `window_group`. */
   show(): void;
   /**
    * Synchronously force the desktop visible regardless of the kill
    * switch. Cancels any in-flight transitions and resets
-   * `visible = true; opacity = 255` on both groups. Idempotent.
+   * `visible = true; opacity = 255` on the window group. Idempotent.
    */
   restore(): void;
   /** Cheap state snapshot for the D-Bus Inspect endpoint. */

@@ -134,6 +134,19 @@ describe('DEFAULT_ZONE_CONFIG.wmClassInstanceFallback', () => {
 });
 
 describe('DEFAULT_ZONE_CONFIG.backdrop', () => {
+  // `fadeMs` was originally coupled to `animation.durationMs` for a
+  // cross-dissolve: real windows fading out over `backdrop.fadeMs`
+  // while the clones eased into their zones over
+  // `animation.durationMs`. After step 5d verification on real
+  // hardware revealed `Clutter.Clone` source-multi-paint artifacts
+  // during the dissolve (the source window stays semi-transparent for
+  // the duration of the fade and the clone replays its paint, so the
+  // user perceives "real fading + clone flying" as a ghosted overlap),
+  // `fadeMs` was decoupled to `0` (hard-cut) by default. The pins
+  // below stay as a guard against accidental re-coupling without
+  // conscious review: changing the default back to a positive value
+  // should force the author to touch this comment and the pin
+  // together so the trade-off is visible in the diff.
   it('hides real windows out of the box', () => {
     // Step 5d ships the hide-real-windows behavior on by default
     // because the visual mixing it solves is the daily-use blocker
@@ -142,14 +155,13 @@ describe('DEFAULT_ZONE_CONFIG.backdrop', () => {
     expect(DEFAULT_ZONE_CONFIG.backdrop.hideRealWindows).toBe(true);
   });
 
-  it('pins the cross-dissolve duration at 220 ms', () => {
+  it('pins the fade duration at 0 (hard-cut)', () => {
     // Reviewer protection against silent default drift, same shape as
-    // the fallback / windowGap / animation pins above. The 220 ms
-    // value is coupled to `animation.durationMs` (see parity test
-    // below); changing one without the other would detune the
-    // cross-dissolve between real windows fading out and clones
-    // flying in.
-    expect(DEFAULT_ZONE_CONFIG.backdrop.fadeMs).toBe(220);
+    // the fallback / windowGap / animation pins above. `0` means the
+    // real-windows hide and show are synchronous opacity/visibility
+    // writes with no ease in flight — see BackdropConfig.fadeMs in
+    // zone-config.ts for the source multi-paint rationale.
+    expect(DEFAULT_ZONE_CONFIG.backdrop.fadeMs).toBe(0);
   });
 
   it('keeps the fade duration non-negative', () => {
@@ -157,21 +169,6 @@ describe('DEFAULT_ZONE_CONFIG.backdrop', () => {
     // `actor.ease` time — both are confusing failure modes. Guard
     // against it here so a future loader can't slip one through.
     expect(DEFAULT_ZONE_CONFIG.backdrop.fadeMs).toBeGreaterThanOrEqual(0);
-  });
-
-  it('keeps backdrop.fadeMs in lock-step with animation.durationMs (ratchet)', () => {
-    // The two values together choreograph the cross-dissolve: real
-    // windows fade out over `backdrop.fadeMs` while the clones ease
-    // into their zones over `animation.durationMs`. Diverging them
-    // silently makes the close transition look mistimed.
-    //
-    // This is a deliberate ratchet, not a forever-invariant: if a
-    // future change wants the backdrop fade to be faster or slower
-    // than the clone ease for a documented UX reason, *that* commit
-    // should update both the literal and this test in the same diff
-    // so the choice is reviewed. The test failing is the prompt to
-    // think, not a bug to silence.
-    expect(DEFAULT_ZONE_CONFIG.animation.durationMs).toBe(DEFAULT_ZONE_CONFIG.backdrop.fadeMs);
   });
 });
 
