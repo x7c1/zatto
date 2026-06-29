@@ -91,22 +91,19 @@ export interface AnimationConfig {
  * / restructure deliberately when that constraint is real.
  *
  * - `hideRealWindows` is the master kill switch. When `false`, the
- *   overlay leaves `global.window_group` alone and falls back to the
- *   step 5c behavior (dimmer + clones over the live desktop).
+ *   overlay leaves `global.window_group` and `global.top_window_group`
+ *   alone and falls back to the step 5c behavior (dimmer + clones
+ *   over the live desktop).
  * - `fadeMs` is the cross-dissolve duration when easing is otherwise
- *   enabled. Defaults to `0` (hard-cut). The original step 5d design
- *   matched this to {@link AnimationConfig.durationMs} so the real
- *   windows would cross-dissolve as the clones flew into their zones,
- *   but on-hardware verification revealed that during the 220 ms fade
- *   the source window stays semi-transparent and `Clutter.Clone`
- *   replays its paint operations — producing a visible "ghost source"
- *   under the flying clone. The hard-cut sidesteps the artifact at the
- *   cost of a less polished transition. Set to a positive value (e.g.
- *   `220`) to opt back into the cross-dissolve once / if a different
- *   clone strategy (e.g. `Shell.WindowPreview`) removes the source
- *   multi-paint. The system-wide `enable-animations` GSettings still
- *   wins inside the production port — `fadeMs > 0` is necessary but
- *   not sufficient.
+ *   enabled. Defaults to `0` (hard-cut). The cross-dissolve was
+ *   originally implicated in a visual artifact (a "ghost source"
+ *   visible through the dimmer during the fade), which the opaque
+ *   wallpaper backdrop in `overlay-actor.ts` now resolves at the
+ *   architectural level — positive values are safe again. The
+ *   default stays at `0` for simplicity; users who want the
+ *   cross-dissolve can opt in. The system-wide `enable-animations`
+ *   GSettings still wins inside the production port — `fadeMs > 0`
+ *   is necessary but not sufficient.
  */
 export interface BackdropConfig {
   readonly hideRealWindows: boolean;

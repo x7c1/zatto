@@ -23,6 +23,10 @@ declare module 'resource:///org/gnome/shell/ui/main.js' {
   export * from '@girs/gnome-shell/dist/ui/main';
 }
 
+declare module 'resource:///org/gnome/shell/ui/background.js' {
+  export * from '@girs/gnome-shell/dist/ui/background';
+}
+
 declare module 'gi://Gio' {
   export * from '@girs/gio-2.0/gio-2.0';
   export { default } from '@girs/gio-2.0/gio-2.0';
