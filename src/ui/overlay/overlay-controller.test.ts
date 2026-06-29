@@ -9,27 +9,45 @@
 
 import { describe, expect, it } from 'vitest';
 import { OverlayController } from './overlay-controller.js';
-import { FakeHotCorner, FakeModalGrab, FakeOverlayActor, FakeWindowMirror } from './test-fakes.js';
+import {
+  FakeHotCorner,
+  FakeModalGrab,
+  FakeOverlayActor,
+  FakeRealWindowsVisibility,
+  FakeWindowMirror,
+} from './test-fakes.js';
 
-function setup(options: { debounceMs?: number } = {}) {
+function setup(options: { debounceMs?: number; autoEnable?: boolean } = {}) {
   let now = 0;
   let epochNow = 1_000_000;
+  // Shared cross-fake timeline. Tests that need to assert "call A on
+  // fake X happened before call B on fake Y" read this array; tests
+  // that don't care can ignore it.
+  const timeline: string[] = [];
+  const record = (label: string) => {
+    timeline.push(label);
+  };
   const hotCorner = new FakeHotCorner();
   const actor = new FakeOverlayActor();
   const modalGrab = new FakeModalGrab();
-  const windowMirror = new FakeWindowMirror();
-  const controller = new OverlayController(hotCorner, actor, modalGrab, windowMirror, {
+  const windowMirror = new FakeWindowMirror(record);
+  const realWindows = new FakeRealWindowsVisibility(record);
+  const controller = new OverlayController(hotCorner, actor, modalGrab, windowMirror, realWindows, {
     debounceMs: options.debounceMs ?? 200,
     now: () => now,
     epochNow: () => epochNow,
   });
-  controller.enable();
+  if (options.autoEnable !== false) {
+    controller.enable();
+  }
   return {
     controller,
     hotCorner,
     actor,
     modalGrab,
     windowMirror,
+    realWindows,
+    timeline,
     advance(ms: number) {
       now += ms;
       epochNow += ms;
@@ -212,13 +230,17 @@ describe('OverlayController', () => {
 
   describe('snapshot()', () => {
     it('reports closed state with no hot-corner history initially', () => {
-      const { controller } = setup();
+      const { controller, realWindows } = setup();
 
       // The fake mirror starts with an empty `byZone` (no clones
       // mounted yet); the production mirror would seed the configured
       // zone keys at zero, but the snapshot contract only guarantees
       // that the values sum to `clonedCount`, not which zones appear.
-      expect(controller.snapshot()).toEqual({
+      // The defensive `restore()` inside `enable()` populates
+      // `realWindows.lastRestoredAt`, so we read it back rather than
+      // hardcoding a wall-clock value.
+      const snap = controller.snapshot();
+      expect(snap).toEqual({
         overlay: { state: 'closed', visible: false },
         hotCorner: { lastEnterAt: null },
         windowMirror: {
@@ -226,11 +248,16 @@ describe('OverlayController', () => {
           byZone: {},
           lastActivatedAt: null,
         },
+        realWindows: {
+          hidden: false,
+          lastRestoredAt: realWindows.snapshot().lastRestoredAt,
+        },
       });
+      expect(snap.realWindows.lastRestoredAt).not.toBeNull();
     });
 
     it('reports open state and visible=true after the overlay opens', () => {
-      const { controller, hotCorner, setEpoch } = setup();
+      const { controller, hotCorner, realWindows, setEpoch } = setup();
       setEpoch(1_700_000_000_000);
 
       hotCorner.fireEnter();
@@ -242,6 +269,10 @@ describe('OverlayController', () => {
           clonedCount: 1,
           byZone: { bottomRight: 1 },
           lastActivatedAt: null,
+        },
+        realWindows: {
+          hidden: true,
+          lastRestoredAt: realWindows.snapshot().lastRestoredAt,
         },
       });
     });
@@ -367,6 +398,120 @@ describe('OverlayController', () => {
         bottomLeft: 0,
         bottomRight: 3,
       });
+    });
+  });
+
+  describe('real-windows visibility wiring', () => {
+    it('restores real windows defensively as the very first step of enable()', () => {
+      // Crash-safety: a previous instance may have died with the
+      // desktop hidden (extension reload, exception during open). The
+      // first thing a fresh controller does has to be `restore()` — it
+      // is the only handle we have on getting the user's screen back.
+      const { realWindows } = setup();
+
+      expect(realWindows.restoreCount).toBe(1);
+      expect(realWindows.callLog[0]).toBe('restore');
+      expect(realWindows.snapshot().lastRestoredAt).not.toBeNull();
+    });
+
+    it('hides the real windows when the overlay opens', () => {
+      const { hotCorner, realWindows } = setup();
+
+      hotCorner.fireEnter();
+
+      expect(realWindows.hideCount).toBe(1);
+      expect(realWindows.snapshot().hidden).toBe(true);
+    });
+
+    it('shows the real windows again on a hot-corner-driven close', () => {
+      const { hotCorner, realWindows, advance } = setup({ debounceMs: 100 });
+
+      hotCorner.fireEnter();
+      advance(150); // clear the debounce window
+      hotCorner.fireEnter();
+
+      expect(realWindows.showCount).toBe(1);
+      expect(realWindows.snapshot().hidden).toBe(false);
+    });
+
+    it('shows the real windows again on an Esc-driven close', () => {
+      const { hotCorner, modalGrab, realWindows } = setup();
+
+      hotCorner.fireEnter();
+      modalGrab.fireEsc();
+
+      expect(realWindows.showCount).toBe(1);
+      expect(realWindows.snapshot().hidden).toBe(false);
+    });
+
+    it('shows the real windows again on a clone-click close', () => {
+      const { hotCorner, windowMirror, realWindows } = setup();
+
+      hotCorner.fireEnter();
+      windowMirror.simulateActivate(1_700_000_010_000);
+
+      expect(realWindows.showCount).toBe(1);
+      expect(realWindows.snapshot().hidden).toBe(false);
+    });
+
+    it('restores the real windows on disable() before unmounting the mirror', () => {
+      // Two safety invariants in one test:
+      //   1. `restoreCount` is 2 — once from the defensive call inside
+      //      enable() (a freshly-constructed controller), once from
+      //      disable() itself. If a future refactor drops either call
+      //      the count flips and this test fails loudly.
+      //   2. The disable() restore happens BEFORE the window mirror's
+      //      unmount. The actor tree is about to be destroyed; the
+      //      desktop must be visible the moment teardown starts so a
+      //      throw from any subsequent step leaves the user with a
+      //      usable screen.
+      const { controller, realWindows, timeline } = setup();
+
+      controller.disable();
+
+      expect(realWindows.restoreCount).toBe(2);
+      const restoreIndices = timeline
+        .map((label, i) => (label === 'realWindows.restore' ? i : -1))
+        .filter((i) => i !== -1);
+      const unmountIndex = timeline.indexOf('windowMirror.unmount');
+      expect(restoreIndices.length).toBe(2);
+      expect(unmountIndex).toBeGreaterThan(-1);
+      // The second (disable-driven) restore must precede the unmount.
+      expect(restoreIndices[1]).toBeLessThan(unmountIndex);
+    });
+
+    it('restores the real windows if handleOpen() throws and re-raises the error', () => {
+      // The catch around `handleOpen()` is the third safety net (after
+      // `restore` on enable / disable). When something inside the open
+      // path throws (here: a forced `acquire()` failure), the desktop
+      // must come back and the exception must still propagate so the
+      // FSM and any outer logging see the failure.
+      const { hotCorner, modalGrab, realWindows } = setup();
+      modalGrab.acquireShouldThrow = true;
+
+      expect(() => hotCorner.fireEnter()).toThrow(/FakeModalGrab\.acquire/);
+      // One restore from enable(), one from the catch. >= guards
+      // against the unlikely future case where multiple defensive
+      // restores fire on the same open path; the floor is what we
+      // care about.
+      expect(realWindows.restoreCount).toBeGreaterThanOrEqual(2);
+      expect(realWindows.snapshot().hidden).toBe(false);
+    });
+
+    it('includes a JSON-stable realWindows block in the snapshot', () => {
+      // The DBusInspector serializes the snapshot with JSON.stringify;
+      // surfacing the realWindows block through the D-Bus contract is
+      // the whole reason the port exists. Round-trip explicitly so a
+      // future field that happens to be a Date / Map / undefined would
+      // get caught instead of silently corrupting the wire payload.
+      const { controller, hotCorner } = setup();
+      hotCorner.fireEnter();
+
+      const snap = controller.snapshot();
+      const roundTripped = JSON.parse(JSON.stringify(snap));
+      expect(roundTripped).toEqual(snap);
+      expect(roundTripped.realWindows.hidden).toBe(true);
+      expect(typeof roundTripped.realWindows.lastRestoredAt).toBe('number');
     });
   });
 });

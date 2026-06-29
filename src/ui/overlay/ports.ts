@@ -139,6 +139,67 @@ export interface WindowMirrorSnapshot {
 }
 
 /**
+ * Read-only snapshot of the {@link RealWindowsVisibilityPort} state
+ * exposed through the D-Bus Inspect endpoint. Tiny on purpose so the
+ * external contract is cheap to depend on.
+ */
+export interface RealWindowsVisibilitySnapshot {
+  /**
+   * Whether the port currently *intends* the user's real desktop windows
+   * to be hidden. `true` between a successful {@link RealWindowsVisibilityPort.hide}
+   * and the next {@link RealWindowsVisibilityPort.show} or
+   * {@link RealWindowsVisibilityPort.restore}; `false` otherwise.
+   *
+   * This reflects intent rather than the live Clutter state because the
+   * actual `visible` / `opacity` values on `global.window_group` may be
+   * mid-transition.
+   */
+  readonly hidden: boolean;
+  /**
+   * Epoch ms of the most recent {@link RealWindowsVisibilityPort.restore}
+   * call, or `null` if `restore` has not run yet. Useful for confirming
+   * the defensive restore on `enable()` actually fired after a crash /
+   * reload cycle.
+   */
+  readonly lastRestoredAt: number | null;
+}
+
+/**
+ * Hides the user's real desktop windows while the overlay is open so the
+ * live `Clutter.Clone` thumbnails are not visually mixed with the original
+ * windows they mirror. The production implementation toggles
+ * `global.window_group` and `global.top_window_group` — the same pattern
+ * Mutter's built-in Activities Overview uses, which is documented-safe
+ * with `Clutter.Clone` because clones keep painting their hidden sources.
+ *
+ * Safety contract — every implementation MUST honor this:
+ *
+ * - {@link restore} is synchronous, idempotent, and always safe to call,
+ *   even when `config.hideRealWindows` is `false`. It is the desktop's
+ *   last line of defense against being left invisible after a crash, an
+ *   exception during open, or an extension reload.
+ * - {@link hide} and {@link show} are no-ops when `config.hideRealWindows`
+ *   is `false`. Only {@link restore} bypasses the kill switch.
+ * - Every write to `visible` / `opacity` is preceded by
+ *   `remove_all_transitions()` on both groups, so a stale in-flight ease
+ *   cannot resurrect a hidden state we just restored.
+ */
+export interface RealWindowsVisibilityPort {
+  /** Fade out (or snap) `window_group` + `top_window_group`. */
+  hide(): void;
+  /** Fade in (or snap back) `window_group` + `top_window_group`. */
+  show(): void;
+  /**
+   * Synchronously force the desktop visible regardless of the kill
+   * switch. Cancels any in-flight transitions and resets
+   * `visible = true; opacity = 255` on both groups. Idempotent.
+   */
+  restore(): void;
+  /** Cheap state snapshot for the D-Bus Inspect endpoint. */
+  snapshot(): RealWindowsVisibilitySnapshot;
+}
+
+/**
  * Mirrors one or more open windows into the overlay as live `Clutter.Clone`
  * thumbnails and routes a click on a clone back into a window activation
  * (`MetaWindow.activate`).

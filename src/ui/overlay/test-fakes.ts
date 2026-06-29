@@ -12,6 +12,8 @@ import type {
   HotCornerPort,
   ModalGrabPort,
   OverlayActorPort,
+  RealWindowsVisibilityPort,
+  RealWindowsVisibilitySnapshot,
   WindowMirrorByZone,
   WindowMirrorPort,
   WindowMirrorSnapshot,
@@ -88,6 +90,12 @@ export class FakeModalGrab implements ModalGrabPort {
   releaseCount = 0;
   /** Toggle to make `acquire()` return false (simulating a `pushModal` failure). */
   acquireShouldFail = false;
+  /**
+   * Toggle to make `acquire()` throw, simulating an unexpected runtime
+   * failure deep inside the grab plumbing. Used by tests that exercise
+   * the controller's catch-and-restore safety net around `handleOpen()`.
+   */
+  acquireShouldThrow = false;
   private held = false;
   private escHandler: (() => void) | null = null;
 
@@ -97,6 +105,9 @@ export class FakeModalGrab implements ModalGrabPort {
 
   acquire(): boolean {
     this.acquireCount++;
+    if (this.acquireShouldThrow) {
+      throw new Error('FakeModalGrab.acquire forced failure');
+    }
     if (this.acquireShouldFail) {
       return false;
     }
@@ -121,6 +132,20 @@ export class FakeModalGrab implements ModalGrabPort {
     this.escHandler?.();
   }
 }
+
+/**
+ * Optional cross-fake event recorder. Tests that need to assert the
+ * relative order of calls across multiple fakes (e.g. "the defensive
+ * `realWindows.restore` on `disable()` must happen before the window
+ * mirror's `unmount`") build a shared timeline and pass it into each
+ * fake's constructor. Fakes that receive a recorder push a stable label
+ * for every lifecycle method they expose; tests then assert on the
+ * shared array.
+ *
+ * Kept entirely optional so the existing single-fake tests stay free of
+ * timeline noise.
+ */
+export type CallRecorder = (label: string) => void;
 
 export class FakeWindowMirror implements WindowMirrorPort {
   mountCount = 0;
@@ -148,8 +173,11 @@ export class FakeWindowMirror implements WindowMirrorPort {
   private byZone: WindowMirrorByZone = {};
   private activatedHandler: (() => void) | null = null;
 
+  constructor(private readonly recorder?: CallRecorder) {}
+
   mount(onActivated: () => void): boolean {
     this.mountCount++;
+    this.recorder?.('windowMirror.mount');
     if (this.mountShouldFindNoWindow) {
       this.activatedHandler = null;
       this.byZone = {};
@@ -163,6 +191,7 @@ export class FakeWindowMirror implements WindowMirrorPort {
   unmount(options?: { readonly immediate?: boolean }): void {
     this.unmountCount++;
     this.unmountCalls.push({ immediate: options?.immediate ?? false });
+    this.recorder?.('windowMirror.unmount');
     this.activatedHandler = null;
     this.byZone = {};
   }
@@ -200,4 +229,54 @@ export class FakeWindowMirror implements WindowMirrorPort {
 
 function sumByZone(byZone: WindowMirrorByZone): number {
   return Object.values(byZone).reduce((a, b) => a + b, 0);
+}
+
+/**
+ * Test double for the {@link RealWindowsVisibilityPort}.
+ *
+ * Records every lifecycle call into {@link callLog} so tests can assert
+ * relative ordering — e.g. "the defensive `restore` on `disable()` must
+ * happen before the window mirror's `unmount`". The per-method counters
+ * are sugar over the same data for tests that only need totals.
+ */
+export class FakeRealWindowsVisibility implements RealWindowsVisibilityPort {
+  hideCount = 0;
+  showCount = 0;
+  restoreCount = 0;
+  /** Lifecycle log in observation order, per-fake. */
+  callLog: Array<'hide' | 'show' | 'restore'> = [];
+  /** Wall-clock epoch ms recorded on the most recent {@link restore} call. */
+  private lastRestoredAt: number | null = null;
+  private hidden = false;
+
+  constructor(private readonly recorder?: CallRecorder) {}
+
+  hide(): void {
+    this.hideCount++;
+    this.callLog.push('hide');
+    this.recorder?.('realWindows.hide');
+    this.hidden = true;
+  }
+
+  show(): void {
+    this.showCount++;
+    this.callLog.push('show');
+    this.recorder?.('realWindows.show');
+    this.hidden = false;
+  }
+
+  restore(): void {
+    this.restoreCount++;
+    this.callLog.push('restore');
+    this.recorder?.('realWindows.restore');
+    this.hidden = false;
+    this.lastRestoredAt = Date.now();
+  }
+
+  snapshot(): RealWindowsVisibilitySnapshot {
+    return {
+      hidden: this.hidden,
+      lastRestoredAt: this.lastRestoredAt,
+    };
+  }
 }

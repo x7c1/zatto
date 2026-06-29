@@ -133,6 +133,48 @@ describe('DEFAULT_ZONE_CONFIG.wmClassInstanceFallback', () => {
   });
 });
 
+describe('DEFAULT_ZONE_CONFIG.backdrop', () => {
+  it('hides real windows out of the box', () => {
+    // Step 5d ships the hide-real-windows behavior on by default
+    // because the visual mixing it solves is the daily-use blocker
+    // that motivated the step. Disabling the kill switch must be a
+    // deliberate config choice, not an accidental default drift.
+    expect(DEFAULT_ZONE_CONFIG.backdrop.hideRealWindows).toBe(true);
+  });
+
+  it('pins the cross-dissolve duration at 220 ms', () => {
+    // Reviewer protection against silent default drift, same shape as
+    // the fallback / windowGap / animation pins above. The 220 ms
+    // value is coupled to `animation.durationMs` (see parity test
+    // below); changing one without the other would detune the
+    // cross-dissolve between real windows fading out and clones
+    // flying in.
+    expect(DEFAULT_ZONE_CONFIG.backdrop.fadeMs).toBe(220);
+  });
+
+  it('keeps the fade duration non-negative', () => {
+    // A negative fadeMs would either be silently clamped or throw at
+    // `actor.ease` time — both are confusing failure modes. Guard
+    // against it here so a future loader can't slip one through.
+    expect(DEFAULT_ZONE_CONFIG.backdrop.fadeMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('keeps backdrop.fadeMs in lock-step with animation.durationMs (ratchet)', () => {
+    // The two values together choreograph the cross-dissolve: real
+    // windows fade out over `backdrop.fadeMs` while the clones ease
+    // into their zones over `animation.durationMs`. Diverging them
+    // silently makes the close transition look mistimed.
+    //
+    // This is a deliberate ratchet, not a forever-invariant: if a
+    // future change wants the backdrop fade to be faster or slower
+    // than the clone ease for a documented UX reason, *that* commit
+    // should update both the literal and this test in the same diff
+    // so the choice is reviewed. The test failing is the prompt to
+    // think, not a bug to silence.
+    expect(DEFAULT_ZONE_CONFIG.animation.durationMs).toBe(DEFAULT_ZONE_CONFIG.backdrop.fadeMs);
+  });
+});
+
 function rectsOverlap(a: FractionalRect, b: FractionalRect): boolean {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 }
