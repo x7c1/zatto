@@ -79,6 +79,38 @@ export interface AnimationConfig {
 }
 
 /**
+ * Backdrop behavior while the overlay is open.
+ *
+ * Step 5d ships a single behavior — hiding the user's real windows so
+ * the live `Clutter.Clone` thumbnails are not visually mixed with their
+ * sources. The schema is intentionally a flat boolean kill switch plus a
+ * fade duration rather than a `mode: 'hide' | 'blur'` discriminator: we
+ * have exactly one behavior today, and inventing the discriminator now
+ * would commit reviewers to a shape we can't validate until a second
+ * behavior (e.g. `Shell.BlurEffect`) actually lands. Step 6+ can rename
+ * / restructure deliberately when that constraint is real.
+ *
+ * - `hideRealWindows` is the master kill switch. When `false`, the
+ *   overlay leaves `global.window_group` and `global.top_window_group`
+ *   alone and falls back to the step 5c behavior (dimmer + clones
+ *   over the live desktop).
+ * - `fadeMs` is the cross-dissolve duration when easing is otherwise
+ *   enabled. Defaults to `0` (hard-cut). The cross-dissolve was
+ *   originally implicated in a visual artifact (a "ghost source"
+ *   visible through the dimmer during the fade), which the opaque
+ *   wallpaper backdrop in `overlay-actor.ts` now resolves at the
+ *   architectural level — positive values are safe again. The
+ *   default stays at `0` for simplicity; users who want the
+ *   cross-dissolve can opt in. The system-wide `enable-animations`
+ *   GSettings still wins inside the production port — `fadeMs > 0`
+ *   is necessary but not sufficient.
+ */
+export interface BackdropConfig {
+  readonly hideRealWindows: boolean;
+  readonly fadeMs: number;
+}
+
+/**
  * Everything the zone picker needs to lay out windows. All fields are
  * plain JSON values (numbers, strings, nested records, `null`) so a
  * loader can produce one from a file or GSettings without runtime
@@ -151,6 +183,13 @@ export interface ZoneConfig {
    * other in the "on" direction, but either can turn easing off.
    */
   readonly animation: AnimationConfig;
+  /**
+   * Backdrop behavior while the overlay is open. See {@link BackdropConfig}.
+   * Step 5d added the hide-real-windows behavior; the schema is
+   * intentionally minimal until a second backdrop mode (e.g. blur)
+   * actually ships.
+   */
+  readonly backdrop: BackdropConfig;
 }
 
 /**
@@ -225,4 +264,5 @@ export const DEFAULT_ZONE_CONFIG: ZoneConfig = {
     durationMs: 220,
     easing: 'easeOutQuad',
   },
+  backdrop: { hideRealWindows: true, fadeMs: 0 },
 };

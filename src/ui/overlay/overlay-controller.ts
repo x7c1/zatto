@@ -18,6 +18,8 @@ import type {
   HotCornerPort,
   ModalGrabPort,
   OverlayActorPort,
+  RealWindowsVisibilityPort,
+  RealWindowsVisibilitySnapshot,
   WindowMirrorPort,
   WindowMirrorSnapshot,
 } from './ports.js';
@@ -44,6 +46,7 @@ export interface OverlayControllerSnapshot {
     lastEnterAt: number | null;
   };
   windowMirror: WindowMirrorSnapshot;
+  realWindows: RealWindowsVisibilitySnapshot;
 }
 
 /** Source of a wall-clock epoch-ms timestamp. Injected so tests stay deterministic. */
@@ -78,6 +81,7 @@ export class OverlayController {
     private readonly actor: OverlayActorPort,
     private readonly modalGrab: ModalGrabPort,
     private readonly windowMirror: WindowMirrorPort,
+    private readonly realWindows: RealWindowsVisibilityPort,
     options: OverlayControllerOptions
   ) {
     const debounceMs = options.debounceMs ?? HOTCORNER_DEBOUNCE_MS;
@@ -86,6 +90,13 @@ export class OverlayController {
   }
 
   enable(): void {
+    // Defensive: if a previous instance died with the desktop hidden
+    // (extension crash, hard reload, prior open() that threw past the
+    // catch), the user is staring at a black screen. Restore is
+    // idempotent and cheap, so always run it as the very first action
+    // before any other wiring — even ahead of subscribing FSM events.
+    this.realWindows.restore();
+
     this.unsubscribeFsm = this.fsm.onEvent((event) => {
       switch (event.type) {
         case 'open-requested':
@@ -117,6 +128,13 @@ export class OverlayController {
   }
 
   disable(): void {
+    // Restore the user's real desktop windows FIRST and synchronously,
+    // before touching anything else. If a later step in this teardown
+    // throws (or the extension is being disabled while open) the
+    // desktop must already be visible — leaving it hidden would
+    // present the user with a blank screen they cannot recover from
+    // without restarting the shell.
+    this.realWindows.restore();
     this.hotCorner.disable();
     this.modalGrab.release();
     // Unmount any live clones BEFORE destroying the actor so the clone
@@ -152,27 +170,49 @@ export class OverlayController {
         lastEnterAt: this.lastEnterAt,
       },
       windowMirror: this.windowMirror.snapshot(),
+      realWindows: this.realWindows.snapshot(),
     };
   }
 
   private handleOpen(): void {
     this.actor.show();
-    // The grab return value is intentionally not checked: a failed
-    // `pushModal` is logged by the port and the overlay still remains
-    // visually open (matching the pre-port behavior). Esc will not work in
-    // that degenerate case, but the user can dismiss via the hot corner.
-    this.modalGrab.acquire();
-    // Mount the live clones after the grab is held so the clones inherit
-    // the same input-routing context the user will be clicking through. A
-    // `false` return (no eligible window) is not an error: the overlay
-    // stays open with just the dimmer and the user dismisses via the
-    // corner or Esc — the PoC value is "did the API even fire", not "did
-    // we always find something to show".
-    this.windowMirror.mount(() => this.fsm.dismiss());
-    this.fsm.commitOpened();
+    // Hide the user's real windows immediately after the dimmer
+    // appears so the live clones we're about to mount don't visually
+    // mix with their sources. The kill switch (config.hideRealWindows)
+    // lives inside the port — calling `hide()` with the switch off is
+    // a no-op, not an error.
+    this.realWindows.hide();
+    // Wrap the post-hide section in a try so any exception during open
+    // (grab failure, mirror crash, FSM bug) is bounced through the
+    // restore() call site that guarantees the desktop comes back. The
+    // exception is re-thrown so the caller still observes the failure
+    // — we are widening the safety net, not swallowing bugs.
+    try {
+      // The grab return value is intentionally not checked: a failed
+      // `pushModal` is logged by the port and the overlay still remains
+      // visually open (matching the pre-port behavior). Esc will not work in
+      // that degenerate case, but the user can dismiss via the hot corner.
+      this.modalGrab.acquire();
+      // Mount the live clones after the grab is held so the clones inherit
+      // the same input-routing context the user will be clicking through. A
+      // `false` return (no eligible window) is not an error: the overlay
+      // stays open with just the dimmer and the user dismisses via the
+      // corner or Esc — the PoC value is "did the API even fire", not "did
+      // we always find something to show".
+      this.windowMirror.mount(() => this.fsm.dismiss());
+      this.fsm.commitOpened();
+    } catch (err) {
+      this.realWindows.restore();
+      throw err;
+    }
   }
 
   private handleClose(): void {
+    // Bring the real windows back BEFORE hiding the dimmer so the
+    // cross-dissolve direction matches the open path — real windows
+    // fade in as the clone container fades out, instead of snapping
+    // back on top of an empty screen.
+    this.realWindows.show();
     this.modalGrab.release();
     this.windowMirror.unmount();
     this.actor.hide();

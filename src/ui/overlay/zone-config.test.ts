@@ -133,6 +133,45 @@ describe('DEFAULT_ZONE_CONFIG.wmClassInstanceFallback', () => {
   });
 });
 
+describe('DEFAULT_ZONE_CONFIG.backdrop', () => {
+  // `fadeMs` was originally coupled to `animation.durationMs` for a
+  // cross-dissolve: real windows fading out over `backdrop.fadeMs`
+  // while the clones eased into their zones over
+  // `animation.durationMs`. After step 5d verification on real
+  // hardware revealed `Clutter.Clone` source-multi-paint artifacts
+  // during the dissolve (the source window stays semi-transparent for
+  // the duration of the fade and the clone replays its paint, so the
+  // user perceives "real fading + clone flying" as a ghosted overlap),
+  // `fadeMs` was decoupled to `0` (hard-cut) by default. The pins
+  // below stay as a guard against accidental re-coupling without
+  // conscious review: changing the default back to a positive value
+  // should force the author to touch this comment and the pin
+  // together so the trade-off is visible in the diff.
+  it('hides real windows out of the box', () => {
+    // Step 5d ships the hide-real-windows behavior on by default
+    // because the visual mixing it solves is the daily-use blocker
+    // that motivated the step. Disabling the kill switch must be a
+    // deliberate config choice, not an accidental default drift.
+    expect(DEFAULT_ZONE_CONFIG.backdrop.hideRealWindows).toBe(true);
+  });
+
+  it('pins the fade duration at 0 (hard-cut)', () => {
+    // Reviewer protection against silent default drift, same shape as
+    // the fallback / windowGap / animation pins above. `0` means the
+    // real-windows hide and show are synchronous opacity/visibility
+    // writes with no ease in flight — see BackdropConfig.fadeMs in
+    // zone-config.ts for the source multi-paint rationale.
+    expect(DEFAULT_ZONE_CONFIG.backdrop.fadeMs).toBe(0);
+  });
+
+  it('keeps the fade duration non-negative', () => {
+    // A negative fadeMs would either be silently clamped or throw at
+    // `actor.ease` time — both are confusing failure modes. Guard
+    // against it here so a future loader can't slip one through.
+    expect(DEFAULT_ZONE_CONFIG.backdrop.fadeMs).toBeGreaterThanOrEqual(0);
+  });
+});
+
 function rectsOverlap(a: FractionalRect, b: FractionalRect): boolean {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 }
