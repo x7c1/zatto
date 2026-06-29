@@ -5,6 +5,7 @@ import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import { EXTENSION_UUID } from './infra/constants.js';
 import { DBusInspector } from './libs/inspector/index.js';
 import { DBusReloader } from './libs/reloader/index.js';
+import { safeDisable } from './libs/safe-disable.js';
 import { GnomeModalGrab } from './libs/shell/gnome-modal-grab.js';
 import { GnomeWindowMirror } from './ui/overlay/gnome-window-mirror.js';
 import { HotCornerTrigger } from './ui/overlay/hot-corner-trigger.js';
@@ -20,8 +21,14 @@ export default class ZattoExtension extends Extension {
   enable() {
     console.log('[Zatto] Extension enabled');
 
-    this.dbusReloader = this.initializeDBusReloader();
-    this.dbusReloader?.enable();
+    // D-Bus surfaces come up first so a registration failure (e.g. another
+    // wedged zatto instance still owns the bus name) is logged and the
+    // matching field nulled-out BEFORE the overlay starts grabbing
+    // resources we'd then need to clean up. The overlay/hot-corner path is
+    // independent — primary functionality stays alive even if D-Bus is
+    // wedged.
+    const reloader = this.initializeDBusReloader();
+    this.dbusReloader = reloader?.enable() ? reloader : null;
 
     const actor = new OverlayActor();
     const modalGrab = new GnomeModalGrab(() => actor.getGrabActor());
@@ -36,21 +43,26 @@ export default class ZattoExtension extends Extension {
     });
     this.overlayController.enable();
 
-    this.dbusInspector = this.initializeDBusInspector(this.overlayController);
-    this.dbusInspector?.enable();
+    const inspector = this.initializeDBusInspector(this.overlayController);
+    this.dbusInspector = inspector?.enable() ? inspector : null;
   }
 
   disable() {
     console.log('[Zatto] Extension disabled');
 
-    this.dbusInspector?.disable();
+    // Tear down D-Bus surfaces FIRST so the bus name is released even if
+    // the overlay-controller teardown throws. Each sibling teardown is
+    // wrapped so one bad branch can never strand the others — that
+    // isolation is exactly what would have prevented the reload-cascade
+    // this PR exists to address.
+    safeDisable('dbusInspector', () => this.dbusInspector?.disable());
     this.dbusInspector = null;
 
-    this.overlayController?.disable();
-    this.overlayController = null;
-
-    this.dbusReloader?.disable();
+    safeDisable('dbusReloader', () => this.dbusReloader?.disable());
     this.dbusReloader = null;
+
+    safeDisable('overlayController', () => this.overlayController?.disable());
+    this.overlayController = null;
   }
 
   private initializeDBusReloader(): DBusReloader | null {
@@ -70,7 +82,7 @@ export default class ZattoExtension extends Extension {
       return null;
     }
     try {
-      return new DBusInspector(controller);
+      return new DBusInspector(controller, this.metadata.uuid);
     } catch (e) {
       console.log(`[Zatto] ERROR: Failed to initialize DBusInspector: ${e}`);
       return null;

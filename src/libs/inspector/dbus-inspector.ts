@@ -1,17 +1,24 @@
+/// <reference path="../../build-mode.d.ts" />
+
 /**
  * D-Bus Inspector Interface
  *
- * Read-only sibling of `DBusReloader`: exposes a single `GetState` method that
- * returns a JSON-encoded snapshot of the running extension's controller state
- * for manual debugging and (eventually) nested-shell e2e assertions. See the
- * reloader for the broader D-Bus registration pattern; this class follows the
- * same shape but stays read-only.
+ * Read-only sibling of `DBusReloader`: exposes `GetState` (live controller
+ * snapshot) and `GetBuildInfo` (commit SHA + build timestamp + UUID) for
+ * manual debugging and, eventually, nested-shell e2e assertions. See the
+ * reloader for the broader D-Bus registration pattern; this class follows
+ * the same shape but stays read-only.
  *
  * Usage from command line:
  *   gdbus call --session \
  *     --dest org.gnome.Shell \
  *     --object-path /io/github/x7c1/Zatto/Inspect \
  *     --method io.github.x7c1.Zatto.Inspect.GetState
+ *
+ *   gdbus call --session \
+ *     --dest org.gnome.Shell \
+ *     --object-path /io/github/x7c1/Zatto/Inspect \
+ *     --method io.github.x7c1.Zatto.Inspect.GetBuildInfo
  */
 
 import Gio from 'gi://Gio';
@@ -25,6 +32,9 @@ const DBUS_INTERFACE_XML = `
   <interface name="${DBUS_INTERFACE_NAME}">
     <method name="GetState">
       <arg type="s" direction="out" name="snapshot"/>
+    </method>
+    <method name="GetBuildInfo">
+      <arg type="s" direction="out" name="buildInfo"/>
     </method>
   </interface>
 </node>
@@ -49,10 +59,24 @@ function getErrorMessage(e: unknown): string {
 
 export class DBusInspector {
   private dbusId: number | null = null;
+  private readonly uuid: string;
 
-  constructor(private readonly provider: StateProvider) {}
+  constructor(
+    private readonly provider: StateProvider,
+    uuid: string
+  ) {
+    this.uuid = uuid;
+  }
 
-  enable(): void {
+  /**
+   * Register the D-Bus interface.
+   *
+   * Returns `true` on success, `false` when registration fails (e.g.
+   * another extension instance already owns the object path). Callers
+   * should null out their reference on `false` so the matching `disable()`
+   * stays a no-op.
+   */
+  enable(): boolean {
     try {
       console.log('[DBusInspector] Starting D-Bus registration...');
       const connection = Gio.bus_get_sync(Gio.BusType.SESSION, null);
@@ -77,6 +101,8 @@ export class DBusInspector {
         ) => {
           if (method_name === 'GetState') {
             this.handleGetState(invocation);
+          } else if (method_name === 'GetBuildInfo') {
+            this.handleGetBuildInfo(invocation);
           }
         },
         null,
@@ -86,8 +112,16 @@ export class DBusInspector {
       console.log(
         `[DBusInspector] D-Bus interface registered at ${DBUS_OBJECT_PATH} with ID: ${this.dbusId}`
       );
+      return true;
     } catch (e: unknown) {
-      console.log(`[DBusInspector] Failed to register D-Bus interface: ${getErrorMessage(e)}`);
+      console.error(`[DBusInspector] Failed to register D-Bus interface: ${getErrorMessage(e)}`);
+      console.error(
+        `[DBusInspector] Another zatto instance already owns ${DBUS_OBJECT_PATH}. ` +
+          'The inspector is disabled for THIS instance. ' +
+          'On Wayland, log out and back in to recover.'
+      );
+      this.dbusId = null;
+      return false;
     }
   }
 
@@ -112,6 +146,27 @@ export class DBusInspector {
     } catch (e: unknown) {
       console.log(`[DBusInspector] GetState failed: ${getErrorMessage(e)}`);
       invocation.return_error_literal(0, 1, `GetState failed: ${getErrorMessage(e)}`);
+    }
+  }
+
+  /**
+   * Return the build identifiers baked in at bundle time. Lets a manual
+   * `gdbus` poke verify "is the running extension actually the bundle I
+   * just built?" without grovelling through the journal. This is the
+   * diagnostic that, had it existed, would have caught the wedged-shell
+   * state during the step-5d verify cycle in a single command.
+   */
+  private handleGetBuildInfo(invocation: Gio.DBusMethodInvocation): void {
+    try {
+      const info = {
+        commitSha: __BUILD_COMMIT_SHA__,
+        buildTimestamp: __BUILD_TIMESTAMP__,
+        uuid: this.uuid,
+      };
+      invocation.return_value(GLib.Variant.new('(s)', [JSON.stringify(info)]));
+    } catch (e: unknown) {
+      console.log(`[DBusInspector] GetBuildInfo failed: ${getErrorMessage(e)}`);
+      invocation.return_error_literal(0, 1, `GetBuildInfo failed: ${getErrorMessage(e)}`);
     }
   }
 }
