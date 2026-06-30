@@ -1,31 +1,32 @@
 /**
  * Extension Reloader
  *
- * A reusable utility for hot-reloading GNOME Shell extensions during development.
- * Inspired by ExtensionReloader (https://codeberg.org/som/ExtensionReloader).
+ * A reusable utility for hot-reloading GNOME Shell extensions during
+ * development. Inspired by ExtensionReloader
+ * (https://codeberg.org/som/ExtensionReloader).
  *
- * Usage:
- *   const reloader = new Reloader('your-extension@example.com');
- *   reloader.reload(); // Call this to reload the extension
+ * This file is intentionally free of `gi://*` and `resource://*` imports
+ * so the orchestration logic can be exercised under vitest with fake
+ * ports. Production wiring (Gio-backed defaults) lives in
+ * `make-reloader.ts`, which is what `DBusReloader` constructs.
+ *
+ * Usage (production):
+ *   const reloader = makeReloader('your-extension@example.com');
+ *   reloader.reload();
+ *
+ * Usage (tests):
+ *   const reloader = new Reloader('uuid', 'uuid', {
+ *     extensionManagerPort, tempCopyPreparer, settingsPort,
+ *     wait: () => Promise.resolve(), now: () => 42,
+ *   });
  */
 
-import Gio from 'gi://Gio';
-import GLib from 'gi://GLib';
-import * as Main from 'resource:///org/gnome/shell/ui/main.js';
-import type { ExtensionObject } from '@girs/gnome-shell/dist/types/extension-object.js';
-import type { ExtensionManager } from '@girs/gnome-shell/dist/ui/extensionSystem.js';
-import { GnomeShellExtensionSettings } from './gnome-shell-extension-settings.js';
-import type { ShellExtensionSettingsPort } from './ports.js';
+import type {
+  ExtensionManagerPort,
+  ShellExtensionSettingsPort,
+  TempCopyPreparer,
+} from './ports.js';
 import { pruneStaleReloadUuids } from './prune-stale-reloads.js';
-
-// Declare TextEncoder/TextDecoder for TypeScript
-declare class TextDecoder {
-  constructor(encoding: string);
-  decode(data: Uint8Array): string;
-}
-declare class TextEncoder {
-  encode(text: string): Uint8Array;
-}
 
 /**
  * Type guard to safely extract error message from unknown error
@@ -37,107 +38,151 @@ function getErrorMessage(e: unknown): string {
   return String(e);
 }
 
+const RECOVERY_HINT =
+  'The previous extension instance likely still owns the D-Bus name. ' +
+  'On Wayland, log out and back in to recover.';
+
+export interface ReloaderOptions {
+  /** GSettings port (must be provided — wire it up via `makeReloader`). */
+  settingsPort: ShellExtensionSettingsPort;
+  /** Extension-manager port (must be provided — wire it up via `makeReloader`). */
+  extensionManagerPort: ExtensionManagerPort;
+  /** Temp-copy preparer (must be provided — wire it up via `makeReloader`). */
+  tempCopyPreparer: TempCopyPreparer;
+  /**
+   * Async wait function. Production wires a GLib timeout; tests pass
+   * `() => Promise.resolve()` to skip the real 100 ms delay between
+   * D-Bus unregistration and the next step.
+   */
+  wait: (ms: number) => Promise<void>;
+  /**
+   * Clock for generating the new reload UUID's timestamp. Production
+   * wires `GLib.get_real_time()`; tests pass a deterministic value.
+   */
+  now: () => number;
+}
+
 export class Reloader {
-  private originalUuid: string;
-  private currentUuid: string;
-  private extensionDir: string;
-  private settingsPort: ShellExtensionSettingsPort;
+  private readonly originalUuid: string;
+  private readonly currentUuid: string;
+  private readonly settingsPort: ShellExtensionSettingsPort;
+  private readonly extensionManager: ExtensionManagerPort;
+  private readonly tempCopyPreparer: TempCopyPreparer;
+  private readonly wait: (ms: number) => Promise<void>;
+  private readonly now: () => number;
 
   /**
-   * Create a new Reloader instance
-   * @param uuid The extension UUID (e.g., 'my-extension@example.com')
-   * @param currentUuid Optional current UUID (used internally for reloaded instances)
-   * @param settingsPort Optional GSettings port; defaults to a Gio-backed
-   *   implementation wrapping `org.gnome.shell`. Tests inject a fake.
+   * Create a new Reloader instance. Production callers go through
+   * `makeReloader()` so the Gio-backed defaults are wired in; tests
+   * construct directly with fakes.
+   *
+   * @param uuid The extension's base UUID (e.g. `'my-extension@example.com'`).
+   * @param currentUuid Current UUID (a `<base>-reload-<ts>` for reloaded instances).
+   * @param options All collaborators, explicitly. No hidden defaults — this
+   *   keeps the unit under test free of `gi://*` imports.
    */
-  constructor(uuid: string, currentUuid?: string, settingsPort?: ShellExtensionSettingsPort) {
+  constructor(uuid: string, currentUuid: string | undefined, options: ReloaderOptions) {
     this.originalUuid = uuid;
     this.currentUuid = currentUuid || uuid;
-    this.extensionDir = `${GLib.get_home_dir()}/.local/share/gnome-shell/extensions/${this.originalUuid}`;
-    this.settingsPort = settingsPort ?? new GnomeShellExtensionSettings();
+    this.settingsPort = options.settingsPort;
+    this.extensionManager = options.extensionManagerPort;
+    this.tempCopyPreparer = options.tempCopyPreparer;
+    this.wait = options.wait;
+    this.now = options.now;
   }
 
   /**
-   * Reload the extension by creating a temporary copy with a new UUID
+   * Reload the extension by creating a temporary copy with a new UUID.
+   *
+   * Sequencing note: we disable the current extension BEFORE preparing the
+   * `/tmp` clone so an aborted reload leaves no orphan tmp dir behind. The
+   * cost (an extra few ms with the extension disabled) is well worth the
+   * clean failure mode.
    */
   async reload(): Promise<void> {
     try {
       console.log('[Reloader] Starting reload...');
 
-      const extensionManager = Main.extensionManager;
+      // Best-effort housekeeping of prior reload UUIDs that GNOME Shell has
+      // not garbage-collected. Runs before we touch the current extension
+      // so a failure here cannot strand us with no enabled instance.
+      this.cleanupOldInstances();
 
-      // Clean up old instances
-      this.cleanupOldInstances(extensionManager);
-
-      // Prepare new UUID and directory
-      const timestamp = GLib.get_real_time();
-      const newUuid = `${this.originalUuid}-reload-${timestamp}`;
-      const tmpDir = `/tmp/${newUuid}`;
-
-      // Copy files and update metadata
-      const tmpDirFile = this.copyFilesToTemp(tmpDir);
-      this.updateMetadata(tmpDirFile, newUuid);
-
-      // Disable old extension first to unregister D-Bus interface
+      // Disable the current extension FIRST so its D-Bus interface is
+      // unregistered before the new instance tries to claim the same name.
+      // If this fails we abort: enabling a second instance over a wedged
+      // one is exactly the cascade this reload-harden PR exists to prevent.
       console.log('[Reloader] Disabling old extension...');
-      const disableSuccess = extensionManager.disableExtension(this.currentUuid);
+      const disableSuccess = this.extensionManager.disableExtension(this.currentUuid);
       if (!disableSuccess) {
-        console.warn(`[Reloader] Failed to disable extension ${this.currentUuid}`);
+        throw new Error(`extensionManager.disableExtension('${this.currentUuid}') returned false`);
       }
 
-      // Wait for D-Bus interface to fully unregister
-      await this.waitAsync(100);
+      // Wait for D-Bus interface to fully unregister.
+      await this.wait(100);
 
-      // Create extension object (returns void in Shell 46)
-      extensionManager.createExtensionObject(
+      // Prepare new UUID and directory only after the disable succeeded —
+      // this way an aborted reload leaves no orphan `/tmp/<uuid>-reload-*`.
+      const timestamp = this.now();
+      const newUuid = `${this.originalUuid}-reload-${timestamp}`;
+      const tmpDir = `/tmp/${newUuid}`;
+      const tmpDirFile = this.tempCopyPreparer.prepare(newUuid);
+
+      // Create extension object (returns void in Shell 46+).
+      this.extensionManager.createExtensionObject(
         newUuid,
         tmpDirFile,
         1 // ExtensionType.PER_USER
       );
 
-      // Retrieve the created extension using lookup
-      // Type assertion needed: lookup() type signature doesn't include undefined,
-      // but runtime actually returns undefined when UUID doesn't exist
-      const newExtension = extensionManager.lookup(newUuid) as ExtensionObject | undefined;
+      const newExtension = this.extensionManager.lookup(newUuid);
       if (!newExtension) {
         throw new Error(`Failed to create extension object for ${newUuid}`);
       }
 
-      await extensionManager.loadExtension(newExtension);
+      await this.extensionManager.loadExtension(newExtension);
 
-      const enableSuccess = extensionManager.enableExtension(newUuid);
+      const enableSuccess = this.extensionManager.enableExtension(newUuid);
       if (!enableSuccess) {
         throw new Error(`Failed to enable extension ${newUuid}`);
       }
 
-      // Clean up old files and extension
-      this.cleanupTempDirs(tmpDir);
-      this.unloadOldExtension(extensionManager, this.currentUuid);
+      // Clean up old files and the now-stale extension instance.
+      this.tempCopyPreparer.cleanupOtherTempDirs(tmpDir);
+      await this.unloadOldExtension(this.currentUuid);
 
       // Prune stale `<base>-reload-<digits>` entries that prior `npm run dev`
       // iterations left behind in `org.gnome.shell` enabled-extensions /
-      // disabled-extensions. Runs after the new UUID is enabled so we never
-      // accidentally evict the currently-running instance.
+      // disabled-extensions. Runs only after the new UUID is enabled so we
+      // never accidentally evict the currently-running instance.
       pruneStaleReloadUuids(this.settingsPort, this.originalUuid, newUuid);
 
       console.log('[Reloader] Reload complete!');
     } catch (e: unknown) {
-      console.log(`[Reloader] Failed to reload: ${getErrorMessage(e)}`);
+      console.error(`[Reloader] Reload aborted: ${getErrorMessage(e)}`);
+      console.error(`[Reloader] ${RECOVERY_HINT}`);
     }
   }
 
   /**
-   * Clean up old reload instances
+   * Clean up old reload instances. Best-effort: if `disableExtension`
+   * returns `false` (e.g. the entry is already stale or errored) we log
+   * and continue across the remaining UUIDs.
    */
-  private cleanupOldInstances(extensionManager: ExtensionManager): void {
-    const uuids = extensionManager.getUuids();
+  private cleanupOldInstances(): void {
+    const uuids = this.extensionManager.getUuids();
     for (const uuid of uuids) {
       if (uuid.includes('-reload-') && uuid !== this.currentUuid) {
         try {
-          extensionManager.disableExtension(uuid);
-          const extension = extensionManager.lookup(uuid) as ExtensionObject | undefined;
+          const disableSuccess = this.extensionManager.disableExtension(uuid);
+          if (!disableSuccess) {
+            console.log(
+              `[Reloader] cleanupOldInstances: disable returned false for ${uuid} (likely stale/errored — continuing)`
+            );
+          }
+          const extension = this.extensionManager.lookup(uuid);
           if (extension) {
-            extensionManager.unloadExtension(extension);
+            this.extensionManager.unloadExtension(extension);
           }
         } catch (e: unknown) {
           console.log(`[Reloader] Error removing ${uuid}: ${getErrorMessage(e)}`);
@@ -147,122 +192,18 @@ export class Reloader {
   }
 
   /**
-   * Copy extension files to temporary directory
+   * Unload old extension instance (already disabled).
    */
-  private copyFilesToTemp(tmpDir: string): Gio.File {
-    GLib.mkdir_with_parents(tmpDir, 0o755);
+  private async unloadOldExtension(uuid: string): Promise<void> {
+    await this.wait(100);
 
-    const sourceDir = Gio.File.new_for_path(this.extensionDir);
-    const tmpDirFile = Gio.File.new_for_path(tmpDir);
-
-    const enumerator = sourceDir.enumerate_children(
-      'standard::name,standard::type',
-      Gio.FileQueryInfoFlags.NONE,
-      null
-    );
-
-    while (true) {
-      const fileInfo = enumerator.next_file(null);
-      if (fileInfo === null) {
-        break;
-      }
-      const name = fileInfo.get_name();
-      const fileType = fileInfo.get_file_type();
-
-      const sourceFile = sourceDir.get_child(name);
-      const destFile = tmpDirFile.get_child(name);
-
-      if (fileType === Gio.FileType.REGULAR) {
-        // Copy regular files
-        sourceFile.copy(destFile, Gio.FileCopyFlags.OVERWRITE, null, null);
-      } else if (fileType === Gio.FileType.DIRECTORY) {
-        // Recursively copy directories (needed for schemas/)
-        this.copyDirectoryRecursive(sourceFile, destFile);
-      }
-    }
-
-    return tmpDirFile;
-  }
-
-  /**
-   * Recursively copy a directory and its contents
-   */
-  private copyDirectoryRecursive(sourceDir: Gio.File, destDir: Gio.File): void {
-    // Create destination directory
-    if (!destDir.query_exists(null)) {
-      destDir.make_directory_with_parents(null);
-    }
-
-    const enumerator = sourceDir.enumerate_children(
-      'standard::name,standard::type',
-      Gio.FileQueryInfoFlags.NONE,
-      null
-    );
-
-    while (true) {
-      const fileInfo = enumerator.next_file(null);
-      if (fileInfo === null) {
-        break;
-      }
-      const name = fileInfo.get_name();
-      const fileType = fileInfo.get_file_type();
-
-      const sourceFile = sourceDir.get_child(name);
-      const destFile = destDir.get_child(name);
-
-      if (fileType === Gio.FileType.REGULAR) {
-        sourceFile.copy(destFile, Gio.FileCopyFlags.OVERWRITE, null, null);
-      } else if (fileType === Gio.FileType.DIRECTORY) {
-        this.copyDirectoryRecursive(sourceFile, destFile);
-      }
-    }
-  }
-
-  /**
-   * Update metadata.json with new UUID
-   */
-  private updateMetadata(tmpDirFile: Gio.File, newUuid: string): void {
-    const metadataFile = tmpDirFile.get_child('metadata.json');
-
-    if (!metadataFile.query_exists(null)) {
-      throw new Error('metadata.json not found');
-    }
-
-    const [success, contents] = metadataFile.load_contents(null);
-    if (!success) {
-      throw new Error('Failed to load metadata.json');
-    }
-
-    const metadataText = new TextDecoder('utf-8').decode(contents);
-    const metadata = JSON.parse(metadataText);
-    metadata.uuid = newUuid;
-
-    const newContents = new TextEncoder().encode(JSON.stringify(metadata, null, 2));
-    metadataFile.replace_contents(
-      newContents,
-      null,
-      false,
-      Gio.FileCreateFlags.REPLACE_DESTINATION,
-      null
-    );
-  }
-
-  /**
-   * Unload old extension instance (already disabled)
-   */
-  private async unloadOldExtension(
-    extensionManager: ExtensionManager,
-    uuid: string
-  ): Promise<void> {
-    await this.waitAsync(100);
-
-    const oldExtension = extensionManager.lookup(uuid) as ExtensionObject | undefined;
+    const oldExtension = this.extensionManager.lookup(uuid);
     if (!oldExtension) {
       return;
     }
 
     try {
-      const success = await extensionManager.unloadExtension(oldExtension);
+      const success = await this.extensionManager.unloadExtension(oldExtension);
       if (success) {
         console.log(`[Reloader] Successfully unloaded: ${uuid}`);
       } else {
@@ -271,26 +212,5 @@ export class Reloader {
     } catch (e: unknown) {
       console.log(`[Reloader] Error unloading: ${getErrorMessage(e)}`);
     }
-  }
-
-  /**
-   * Clean up old temporary directories
-   */
-  private cleanupTempDirs(currentTmpDir: string): void {
-    const currentTmpName = currentTmpDir.split('/').pop();
-    const cleanupCommand = `sh -c "cd /tmp && ls -d ${this.originalUuid}-reload-* 2>/dev/null | grep -v '${currentTmpName}' | xargs rm -rf"`;
-    GLib.spawn_command_line_async(cleanupCommand);
-  }
-
-  /**
-   * Wait asynchronously using GLib timeout
-   */
-  private waitAsync(ms: number): Promise<void> {
-    return new Promise((resolve) => {
-      GLib.timeout_add(GLib.PRIORITY_DEFAULT, ms, () => {
-        resolve();
-        return GLib.SOURCE_REMOVE;
-      });
-    });
   }
 }

@@ -12,7 +12,8 @@
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
-import { Reloader } from './reloader.js';
+import { makeReloader } from './make-reloader.js';
+import type { Reloader } from './reloader.js';
 
 // D-Bus interface XML definition
 const DBUS_INTERFACE_XML = `
@@ -35,14 +36,19 @@ export class DBusReloader {
    * @param currentUuid The current UUID (for reloaded instances)
    */
   constructor(originalUuid: string, currentUuid?: string) {
-    this.reloader = new Reloader(originalUuid, currentUuid);
+    this.reloader = makeReloader(originalUuid, currentUuid);
     this.dbusId = null;
   }
 
   /**
-   * Register the D-Bus interface
+   * Register the D-Bus interface.
+   *
+   * Returns `true` when registration succeeded and the interface is live,
+   * `false` otherwise. The caller is expected to null out its reference on
+   * failure so a subsequent `disable()` is a no-op — we never want to call
+   * `unregister_object` on an id we never owned.
    */
-  enable(): void {
+  enable(): boolean {
     try {
       console.log('[DBusReloader] Starting D-Bus registration...');
 
@@ -86,8 +92,18 @@ export class DBusReloader {
       console.log(
         `[DBusReloader] D-Bus interface registered at /io/github/x7c1/Zatto with ID: ${this.dbusId}`
       );
+      return true;
     } catch (e: unknown) {
-      console.log(`[DBusReloader] Failed to register D-Bus interface: ${this.getErrorMessage(e)}`);
+      console.error(
+        `[DBusReloader] Failed to register D-Bus interface: ${this.getErrorMessage(e)}`
+      );
+      console.error(
+        '[DBusReloader] Another zatto instance already owns /io/github/x7c1/Zatto. ' +
+          'The reloader is disabled for THIS instance. ' +
+          'On Wayland, log out and back in to recover.'
+      );
+      this.dbusId = null;
+      return false;
     }
   }
 
