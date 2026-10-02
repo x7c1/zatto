@@ -6,7 +6,7 @@ Switching to a window that is already visible on screen, just partially hidden b
 
 ## Status
 
-Proof of concept. Entering the bottom-left hot corner opens an overlay that mirrors the open windows in place; clicking one raises it, and Esc or re-entering the corner closes the overlay. A depth view (stacking order rendered as depth, with the windows under the cursor cycled by the scroll wheel) is in progress.
+Proof of concept. Entering the bottom-left hot corner opens an overlay that mirrors the open windows in place; clicking one raises it, and Esc or re-entering the corner closes the overlay. The overlay now renders the stacking order as a tilted, translucent depth view; cycling the windows under the cursor with the scroll wheel is the next step.
 
 ## License
 

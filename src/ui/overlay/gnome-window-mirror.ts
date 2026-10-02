@@ -4,8 +4,11 @@
  * Enumerates every eligible top-level window and mirrors each one into
  * the overlay as a reactive clone placed at the source window's own
  * on-screen frame rect (relative to the primary monitor). Nothing is
- * moved or resized: the overlay shows the windows exactly where they
- * already are. Clicking a clone activates its window.
+ * moved or resized in x, y. Instead the stacking order is rendered as
+ * depth: each clone is pushed back along Z by how many windows sit above
+ * it and drawn translucent, and the clone container is tilted once around
+ * its Y axis (see `depth-layout.ts` for the geometry and tuning). Clicking
+ * a clone activates its window.
  *
  * Three Mutter / Clutter API points this mirror sits on top of:
  *
@@ -24,6 +27,7 @@ import Clutter from 'gi://Clutter';
 import Meta from 'gi://Meta';
 import type St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import { computeDepthLayout, DEPTH_VIEW_TUNING } from './depth-layout.js';
 import type { WindowMirrorPort, WindowMirrorSnapshot } from './ports.js';
 
 /** A clone we mounted plus the bookkeeping we need to tear it down cleanly. */
@@ -67,20 +71,31 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       return false;
     }
 
-    for (const { actor, win } of this.collectEligible()) {
+    // Bottom-to-top, as `global.get_window_actors()` returns them. Clutter
+    // paints children in insertion order and does not depth-sort, so the
+    // topmost window must be added last.
+    const entries = this.collectEligible().filter(({ win }) => {
       const frame = win.get_frame_rect();
-      if (frame.width <= 0 || frame.height <= 0) {
-        // Mutter occasionally hands back 0x0 mid-resize. Skip rather than
-        // mount an invisible-but-reactive clone.
-        continue;
-      }
+      // Mutter occasionally hands back 0x0 mid-resize. Skip rather than
+      // mount an invisible-but-reactive clone.
+      return frame.width > 0 && frame.height > 0;
+    });
+    const layout = computeDepthLayout(entries.length, DEPTH_VIEW_TUNING);
 
+    entries.forEach(({ actor, win }, index) => {
+      const frame = win.get_frame_rect();
       const clone = new Clutter.Clone({
         source: actor,
         reactive: true,
       });
       clone.set_position(frame.x - monitor.x, frame.y - monitor.y);
       clone.set_size(frame.width, frame.height);
+
+      const placement = layout[index];
+      if (placement !== undefined) {
+        clone.set_translation(0, 0, placement.translationZ);
+        clone.opacity = placement.opacity;
+      }
 
       const clickHandlerId = clone.connect('button-press-event', () => {
         this.activateWindow(win);
@@ -90,12 +105,20 @@ export class GnomeWindowMirror implements WindowMirrorPort {
 
       container.add_child(clone);
       this.clones.push({ clone, clickHandlerId });
-    }
+    });
+
+    // Tilt the whole plane once, around its centre, so every window keeps
+    // its x, y relationship and the per-clone Z offsets become visible
+    // under the stage's perspective projection.
+    container.set_pivot_point(0.5, 0.5);
+    container.set_rotation_angle(Clutter.RotateAxis.Y_AXIS, DEPTH_VIEW_TUNING.tiltDegrees);
 
     return this.clones.length > 0;
   }
 
   unmount(): void {
+    // Restore a flat container so the next mount starts without tilt.
+    this.getContainer()?.set_rotation_angle(Clutter.RotateAxis.Y_AXIS, 0);
     for (const mounted of this.clones) {
       this.disposeClone(mounted);
     }
