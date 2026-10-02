@@ -37,20 +37,13 @@ export interface HotCornerPort {
 }
 
 /**
- * The visible overlay surface (a full-monitor dimmer hosting the window
+ * The visible overlay surface (a work-area dimmer hosting the window
  * clones).
  *
  * The controller does not care about the actor's internal hierarchy; it only
  * needs to mount it, toggle its visibility, and tear it down. {@link show}
  * and {@link hide} may fade the dim shade; {@link isVisible} reports the
  * intent (`true` from `show()` until `hide()`), not the fade progress.
- *
- * The actor also owns an in-overlay corner sensor — a small reactive child of
- * the dimmer covering the same rect as {@link HotCornerPort}. While the modal
- * grab is held, Clutter routes pointer events only to the grab actor and its
- * descendants, so the chrome-level hot corner stops firing. The in-overlay
- * sensor exists purely to restore the "re-enter the hot corner to dismiss"
- * gesture in that state, via {@link onCornerReenter}.
  */
 export interface OverlayActorPort {
   /** Mount the actor into the Shell chrome (hidden until {@link show}). */
@@ -61,33 +54,31 @@ export interface OverlayActorPort {
   hide(): void;
   /** Whether the overlay is meant to be visible (set by `show()`, cleared by `hide()`). */
   isVisible(): boolean;
-  /**
-   * Register the single re-entry handler fired when the cursor enters the
-   * in-overlay corner sensor (i.e. while the modal grab is held). The port
-   * supports exactly one handler at a time; the most recent registration
-   * wins. Set before calling {@link mount}.
-   */
-  onCornerReenter(handler: () => void): void;
   /** Unmount and free resources. Must be idempotent. */
   destroy(): void;
 }
 
 /**
- * Wraps the modal input grab plus the Esc key binding into a single port,
- * since in production they share the same grab actor and are acquired /
- * released as a unit.
+ * Wraps the modal input grab plus the input it watches while held (Esc and
+ * presses outside the overlay) into a single port, since in production they
+ * share the same grab and are acquired / released as a unit.
  *
- * `onEsc` must be registered before {@link acquire}; the handler is invoked
- * whenever the user presses Escape while the grab is held. The handler is
- * cleared on {@link release}.
+ * Handlers must be registered before {@link acquire}; they are invoked only
+ * while the grab is held.
  */
 export interface ModalGrabPort {
   /**
    * Register the Esc handler. The port supports exactly one handler at a
-   * time. Setting `null` (or re-registering before the next {@link acquire})
-   * clears it.
+   * time; the most recent registration wins.
    */
   onEsc(handler: () => void): void;
+  /**
+   * Register the outside-press handler, invoked when a button press or touch
+   * begins outside the overlay (e.g. on the top bar or the dock) while the
+   * grab is held. The press still reaches its target. The port supports
+   * exactly one handler at a time; the most recent registration wins.
+   */
+  onOutsidePress(handler: () => void): void;
   /**
    * Acquire the modal grab. Returns whether the grab is now held — a `false`
    * return means the controller should treat the open as having failed and

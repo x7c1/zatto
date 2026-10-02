@@ -31,7 +31,7 @@ export default class ZattoExtension extends Extension {
     this.dbusReloader = reloader?.enable() ? reloader : null;
 
     const actor = new OverlayActor();
-    const modalGrab = new GnomeModalGrab(() => actor.getGrabActor());
+    const modalGrab = new GnomeModalGrab(() => actor.getActor());
     const hotCorner = new HotCornerTrigger();
     const windowMirror = new GnomeWindowMirror(() => actor.getCloneContainer());
     const realWindows = new GnomeRealWindows();

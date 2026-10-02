@@ -117,15 +117,15 @@ export class OverlayController {
     });
 
     this.modalGrab.onEsc(() => this.fsm.dismiss());
+    // A press on the top bar or the dock closes the overlay and still
+    // reaches its target, as in the Activities Overview.
+    this.modalGrab.onOutsidePress(() => this.fsm.dismiss());
+    // The modal grab is on the stage, so the trigger keeps firing while the
+    // overlay is open: one trigger both opens and closes it.
     this.hotCorner.onEnter(() => {
       this.lastEnterAt = this.epochNow();
       this.fsm.toggle();
     });
-    // The in-overlay corner sensor relays the "re-enter the hot corner while
-    // open" gesture that the chrome-level `HotCornerTrigger` can no longer
-    // observe under the modal grab. The FSM's debounce + state guard provide
-    // the same jitter protection as the primary hot-corner path.
-    this.actor.onCornerReenter(() => this.fsm.toggle());
 
     this.actor.mount();
     this.hotCorner.enable();
@@ -174,8 +174,9 @@ export class OverlayController {
     this.actor.show();
     // The grab return value is intentionally not checked: a failed
     // `pushModal` is logged by the port and the overlay still remains
-    // visually open (matching the pre-port behavior). Esc will not work in
-    // that degenerate case, but the user can dismiss via the hot corner.
+    // visually open (matching the pre-port behavior). Esc and outside
+    // presses will not work in that degenerate case, but the user can
+    // dismiss via the hot corner.
     this.modalGrab.acquire();
     // Mount the live clones after the grab is held so the clones inherit
     // the same input-routing context the user will be clicking through. A

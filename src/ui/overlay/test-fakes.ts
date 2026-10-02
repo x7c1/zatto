@@ -45,7 +45,6 @@ export class FakeOverlayActor implements OverlayActorPort {
   mounted = false;
   destroyed = false;
   private visible = false;
-  private cornerReenterHandler: (() => void) | null = null;
 
   mount(): void {
     this.mounted = true;
@@ -66,18 +65,6 @@ export class FakeOverlayActor implements OverlayActorPort {
     return this.visible;
   }
 
-  onCornerReenter(handler: () => void): void {
-    this.cornerReenterHandler = handler;
-  }
-
-  /**
-   * Test helper: simulate the user hovering the in-overlay corner sensor
-   * (i.e. re-entering the hot corner rect while the modal grab is held).
-   */
-  simulateCornerReenter(): void {
-    this.cornerReenterHandler?.();
-  }
-
   destroy(): void {
     this.mounted = false;
     this.destroyed = true;
@@ -92,9 +79,14 @@ export class FakeModalGrab implements ModalGrabPort {
   acquireShouldFail = false;
   private held = false;
   private escHandler: (() => void) | null = null;
+  private outsidePressHandler: (() => void) | null = null;
 
   onEsc(handler: () => void): void {
     this.escHandler = handler;
+  }
+
+  onOutsidePress(handler: () => void): void {
+    this.outsidePressHandler = handler;
   }
 
   acquire(): boolean {
@@ -121,6 +113,15 @@ export class FakeModalGrab implements ModalGrabPort {
   /** Test helper: simulate the user pressing Escape while the grab is held. */
   fireEsc(): void {
     this.escHandler?.();
+  }
+
+  /**
+   * Test helper: simulate a press outside the overlay (top bar, dock).
+   * Fires even when no grab is held, so tests can check that the
+   * controller itself ignores a stray press while closing or closed.
+   */
+  fireOutsidePress(): void {
+    this.outsidePressHandler?.();
   }
 }
 

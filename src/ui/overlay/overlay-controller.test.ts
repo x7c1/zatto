@@ -4,8 +4,9 @@
  * Unlike the pure FSM tests in `overlay-state-machine.test.ts`, these wire
  * the controller against fake hot-corner / overlay-actor / modal-grab
  * implementations and assert the cross-port behavior the controller is
- * responsible for: visibility, grab lifecycle, Esc handling, debounce, and
- * hiding / showing the real windows around the clone transitions.
+ * responsible for: visibility, grab lifecycle, Esc and outside-press
+ * handling, debounce, and hiding / showing the real windows around the
+ * clone transitions.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -63,6 +64,7 @@ describe('OverlayController', () => {
   });
 
   it('closes the overlay and releases the grab on a second hot-corner enter', () => {
+    // The grab is on the stage, so the trigger keeps firing while open.
     const { hotCorner, actor, modalGrab, advance } = setup({ debounceMs: 100 });
 
     hotCorner.fireEnter();
@@ -75,36 +77,67 @@ describe('OverlayController', () => {
     expect(modalGrab.releaseCount).toBe(1);
   });
 
-  it('closes the overlay via the in-overlay corner sensor while the modal grab is held', () => {
-    // Regression: under the modal grab the chrome-level `HotCornerTrigger`
-    // stops receiving pointer events (events are routed only to the grab
-    // actor and its descendants), so the in-overlay corner sensor must own
-    // the Open -> Closed path while open.
-    const { controller, hotCorner, actor, modalGrab, advance } = setup({ debounceMs: 100 });
+  describe('outside press (onOutsidePress)', () => {
+    it('closes the overlay and releases the grab while open', () => {
+      const { controller, hotCorner, actor, modalGrab, windowMirror } = setup();
+      hotCorner.fireEnter();
 
-    hotCorner.fireEnter();
-    advance(150); // clear the debounce window
+      modalGrab.fireOutsidePress();
 
-    actor.simulateCornerReenter();
+      expect(actor.isVisible()).toBe(false);
+      expect(modalGrab.isHeld()).toBe(false);
+      expect(modalGrab.releaseCount).toBe(1);
+      expect(windowMirror.unmountCount).toBe(1);
+      expect(controller.snapshot().overlay.state).toBe('closed');
+    });
 
-    expect(actor.isVisible()).toBe(false);
-    expect(modalGrab.isHeld()).toBe(false);
-    expect(modalGrab.releaseCount).toBe(1);
-    expect(controller.snapshot().overlay.state).toBe('closed');
+    it('does nothing while closing', () => {
+      const { controller, hotCorner, modalGrab, windowMirror } = setup();
+      windowMirror.deferUnmountDone = true;
+      hotCorner.fireEnter();
+      modalGrab.fireEsc();
+
+      modalGrab.fireOutsidePress();
+
+      expect(controller.snapshot().overlay.state).toBe('closing');
+      expect(windowMirror.unmountCount).toBe(1);
+      expect(modalGrab.releaseCount).toBe(1);
+    });
+
+    it('does nothing while closed', () => {
+      const { controller, actor, modalGrab, windowMirror } = setup();
+
+      modalGrab.fireOutsidePress();
+
+      expect(controller.snapshot().overlay.state).toBe('closed');
+      expect(actor.isVisible()).toBe(false);
+      expect(modalGrab.acquireCount).toBe(0);
+      expect(windowMirror.mountCount).toBe(0);
+    });
   });
 
-  it('ignores a corner-reenter that arrives inside the debounce window', () => {
-    const { actor, hotCorner, modalGrab, advance } = setup({ debounceMs: 200 });
+  it('keeps the overlay closed when a hot-corner enter is synthesized right after the close lands', () => {
+    // Hiding the dimmer and the clones makes Clutter repick and synthesize
+    // an `enter-event` on the trigger if the pointer rests in the corner.
+    // The close lands well after it was requested, so the window must
+    // restart there, not at the request.
+    const { controller, hotCorner, windowMirror, advance } = setup({ debounceMs: 100 });
+    windowMirror.deferUnmountDone = true;
+    hotCorner.fireEnter();
+    advance(150);
+    hotCorner.fireEnter(); // close requested
+    advance(250); // the close ease
+    windowMirror.finishUnmount();
 
-    hotCorner.fireEnter(); // opens, starts the cooldown
-    advance(50); // < 200ms
-    actor.simulateCornerReenter();
+    hotCorner.fireEnter(); // synthesized by the teardown
 
-    // Still open — the corner sensor shares the FSM's debounce contract with
-    // the primary hot corner.
-    expect(actor.isVisible()).toBe(true);
-    expect(modalGrab.isHeld()).toBe(true);
-    expect(modalGrab.releaseCount).toBe(0);
+    expect(controller.snapshot().overlay.state).toBe('closed');
+    expect(windowMirror.mountCount).toBe(1);
+
+    advance(100);
+    hotCorner.fireEnter(); // a deliberate re-entry
+
+    expect(controller.snapshot().overlay.state).toBe('open');
   });
 
   it('closes the overlay and releases the grab when Esc fires', () => {
@@ -346,8 +379,8 @@ describe('OverlayController', () => {
         close: (env: OpenEnv) => env.hotCorner.fireEnter(),
       },
       {
-        name: 'in-overlay corner re-entry',
-        close: (env: OpenEnv) => env.actor.simulateCornerReenter(),
+        name: 'outside press',
+        close: (env: OpenEnv) => env.modalGrab.fireOutsidePress(),
       },
       { name: 'Esc', close: (env: OpenEnv) => env.modalGrab.fireEsc() },
       {
@@ -412,12 +445,12 @@ describe('OverlayController', () => {
 
     it('ignores every toggle while the close ease is in flight', () => {
       const env = setupOpen();
-      const { controller, hotCorner, actor, modalGrab, windowMirror, realWindows, advance } = env;
+      const { controller, hotCorner, modalGrab, windowMirror, realWindows, advance } = env;
       modalGrab.fireEsc();
       advance(500); // well past the debounce window
 
       hotCorner.fireEnter();
-      actor.simulateCornerReenter();
+      modalGrab.fireOutsidePress();
       modalGrab.fireEsc();
 
       expect(controller.snapshot().overlay.state).toBe('closing');

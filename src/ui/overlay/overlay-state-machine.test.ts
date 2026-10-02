@@ -179,6 +179,60 @@ describe('OverlayStateMachine', () => {
     });
   });
 
+  describe('debounce restart on close', () => {
+    function openPastDebounce(debounceMs: number) {
+      const env = setup({ debounceMs });
+      env.fsm.toggle();
+      env.fsm.commitOpened();
+      env.advance(debounceMs + 50);
+      return env;
+    }
+
+    it('rejects a toggle right after commitClosed', () => {
+      const { fsm, advance } = openPastDebounce(200);
+      fsm.toggle();
+      // The close ease lands later than the debounce window of the toggle.
+      advance(300);
+      fsm.commitClosed();
+
+      advance(10); // < 200ms since the close landed
+      expect(fsm.toggle()).toBe(false);
+      expect(fsm.getState()).toBe('closed');
+    });
+
+    it('accepts a toggle debounceMs after commitClosed', () => {
+      const { fsm, advance } = openPastDebounce(200);
+      fsm.toggle();
+      advance(300);
+      fsm.commitClosed();
+
+      advance(200);
+      expect(fsm.toggle()).toBe(true);
+      expect(fsm.getState()).toBe('opening');
+    });
+
+    it('rejects a toggle right after dismiss', () => {
+      const { fsm, advance } = openPastDebounce(200);
+      fsm.dismiss();
+      // Without animations the close lands in the same instant.
+      fsm.commitClosed();
+
+      advance(10); // < 200ms since the dismiss
+      expect(fsm.toggle()).toBe(false);
+      expect(fsm.getState()).toBe('closed');
+    });
+
+    it('accepts a toggle debounceMs after dismiss', () => {
+      const { fsm, advance } = openPastDebounce(200);
+      fsm.dismiss();
+      fsm.commitClosed();
+
+      advance(200);
+      expect(fsm.toggle()).toBe(true);
+      expect(fsm.getState()).toBe('opening');
+    });
+  });
+
   describe('commit calls', () => {
     it('commitOpened is a no-op outside opening', () => {
       const { fsm, events } = setup();

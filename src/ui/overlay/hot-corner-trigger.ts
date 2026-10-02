@@ -37,12 +37,9 @@ import type { HotCornerPort } from './ports.js';
 
 /**
  * Side length (px) of the invisible reactive square anchored at the bottom-left
- * corner. Exported so the in-overlay re-entry sensor (mounted as a child of
- * the dimmer in {@link OverlayActor}) can mirror the same rect — the user must
- * see the two sensors as a single corner regardless of whether the modal grab
- * is held.
+ * corner.
  */
-export const HOT_CORNER_SIZE = 5;
+const HOT_CORNER_SIZE = 5;
 
 export class HotCornerTrigger implements HotCornerPort {
   private actor: St.Widget | null = null;

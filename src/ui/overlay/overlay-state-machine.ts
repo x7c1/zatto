@@ -11,7 +11,8 @@
  * - `closed`  — overlay hidden, no input grab.
  * - `opening` — toggle requested while `closed`; glue should mount/show the
  *               overlay and call `commitOpened()` when ready.
- * - `open`    — overlay visible and grabbing input (Esc dismisses).
+ * - `open`    — overlay visible and grabbing input (Esc or a press outside
+ *               the overlay dismisses).
  * - `closing` — toggle/dismiss requested while `open`; glue should hide/unmount
  *               the overlay and call `commitClosed()` when ready.
  *
@@ -22,8 +23,13 @@
  *
  * On top of the state-based debounce, a separate cooldown window swallows
  * `toggle()` calls that arrive within `debounceMs` of the last accepted
- * toggle. This handles the case where the cursor leaves the corner and
- * re-enters quickly enough that the user clearly meant one gesture.
+ * toggle, of the last accepted `dismiss()`, or of the last `commitClosed()`.
+ * The first handles the cursor leaving the corner and re-entering quickly
+ * enough that the user clearly meant one gesture. The last matters because
+ * the close lands well after it was requested (the clones ease back first):
+ * tearing the overlay down makes Clutter repick and synthesize an
+ * `enter-event` on whatever is now under the pointer, and if that is the hot
+ * corner, the synthesized toggle must not reopen the overlay.
  */
 
 export type OverlayState = 'closed' | 'opening' | 'open' | 'closing';
@@ -95,16 +101,20 @@ export class OverlayStateMachine {
   }
 
   /**
-   * Request a dismiss (typically from an Esc key press). Only meaningful when
-   * the overlay is `open` — ignored otherwise. Returns whether it was accepted.
+   * Request a dismiss (from Esc or a press outside the overlay). Only
+   * meaningful when the overlay is `open` — ignored otherwise. Returns whether
+   * it was accepted.
    *
-   * Esc is intentionally NOT subject to the debounce window: the user pressing
-   * Esc always reflects an explicit intent, never a stray cursor jitter.
+   * Dismiss is intentionally NOT subject to the debounce window: a key press
+   * or a click always reflects an explicit intent, never a stray cursor
+   * jitter. An accepted dismiss does restart the window, like an accepted
+   * toggle.
    */
   dismiss(): boolean {
     if (this.state !== 'open') {
       return false;
     }
+    this.lastAcceptedToggleMs = this.options.now();
     this.state = 'closing';
     this.emit({ type: 'close-requested' });
     return true;
@@ -124,12 +134,14 @@ export class OverlayStateMachine {
 
   /**
    * Glue notifies the machine that the close animation/unmount completed.
-   * No-op unless we are in `closing`.
+   * No-op unless we are in `closing`. Restarts the debounce window, so a
+   * toggle synthesized by the teardown itself cannot reopen the overlay.
    */
   commitClosed(): void {
     if (this.state !== 'closing') {
       return;
     }
+    this.lastAcceptedToggleMs = this.options.now();
     this.state = 'closed';
     this.emit({ type: 'closed' });
   }
