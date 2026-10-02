@@ -5,12 +5,11 @@
  * the overlay as a reactive clone placed at the source window's own
  * on-screen frame rect (relative to the primary monitor). Nothing is
  * moved or resized in x, y. Instead the stacking order is rendered as
- * depth: the plane of windows is viewed from a slight angle under an
- * orthographic projection, so each clone is offset sideways by how many
- * windows sit above it and drawn translucent, and the whole plane is
- * squashed and, if needed, scaled and shifted to stay on the monitor (see
- * `depth-layout.ts` for the geometry and tuning). Clicking a clone
- * activates its window.
+ * depth under a parallel oblique projection: each clone is offset along
+ * the depth axis by how many windows sit above it and drawn translucent,
+ * and the whole set is scaled down and shifted only if needed to stay on
+ * the monitor (see `depth-layout.ts` for the geometry and tuning).
+ * Clicking a clone activates its window.
  *
  * Three Mutter / Clutter API points this mirror sits on top of:
  *
@@ -102,7 +101,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
         reactive: true,
       });
       const placement = layout.clones[index];
-      clone.set_position(rect.x + (placement?.offsetX ?? 0), rect.y);
+      clone.set_position(rect.x + (placement?.offsetX ?? 0), rect.y + (placement?.offsetY ?? 0));
       clone.set_size(rect.width, rect.height);
       if (placement !== undefined) {
         clone.opacity = placement.opacity;
@@ -118,12 +117,12 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       this.clones.push({ clone, clickHandlerId });
     });
 
-    // Project the tilted plane once, on the container, so every window
-    // keeps its x, y relationship: the horizontal squash is the container's
-    // x scale, and the fit scale and shift keep the whole plane on screen.
-    const { scaleX, scaleY, translationX, translationY } = layout.container;
+    // Fit once, on the container, so every window keeps its x, y
+    // relationship: the scale and shift are identity unless the offset
+    // clones would leave the monitor.
+    const { scale, translationX, translationY } = layout.container;
     container.set_pivot_point(0, 0);
-    container.set_scale(scaleX, scaleY);
+    container.set_scale(scale, scale);
     container.set_translation(translationX, translationY, 0);
 
     return this.clones.length > 0;

@@ -1,92 +1,90 @@
 import { describe, expect, it } from 'vitest';
-import { computeDepthLayout, type Rect } from './depth-layout.js';
+import { computeDepthLayout, type DepthViewLayout, type Rect } from './depth-layout.js';
 
-const tuning = { tiltDegrees: 15, zStepPx: 80, opacity: 0.85 };
+const tuning = { depthAxisDegrees: 45, depthStepPx: 32, opacity: 0.85 };
 const monitor = { width: 1920, height: 1080 };
-const cos = Math.cos((15 * Math.PI) / 180);
-const sin = Math.sin((15 * Math.PI) / 180);
+/** One level away from the viewer: up and to the left along the 45° axis. */
+const step = 32 / Math.SQRT2;
 
 function frame(x: number, y: number, width: number, height: number): Rect {
   return { x, y, width, height };
 }
 
-/** Left edge of `frame` on screen after the container transform. */
-function screenLeft(layout: ReturnType<typeof computeDepthLayout>, f: Rect, i: number): number {
+/** Top-left corner of frame `i` on screen after the container transform. */
+function screenTopLeft(layout: DepthViewLayout, f: Rect, i: number): [number, number] {
   const { container } = layout;
-  return container.translationX + (f.x + layout.clones[i].offsetX) * container.scaleX;
+  return [
+    container.translationX + (f.x + layout.clones[i].offsetX) * container.scale,
+    container.translationY + (f.y + layout.clones[i].offsetY) * container.scale,
+  ];
 }
 
 describe('computeDepthLayout', () => {
   it('returns an empty layout and an identity transform for no clones', () => {
     expect(computeDepthLayout([], monitor, tuning)).toEqual({
       clones: [],
-      container: { scaleX: 1, scaleY: 1, translationX: 0, translationY: 0 },
+      container: { scale: 1, translationX: 0, translationY: 0 },
     });
   });
 
-  it('gives a single clone offset 0 and keeps it centred under the squash', () => {
-    const f = frame(0, 0, 1920, 1080);
+  it('leaves a single clone exactly where its window is', () => {
+    const f = frame(100, 200, 640, 480);
     const layout = computeDepthLayout([f], monitor, tuning);
     // toEqual distinguishes -0 from 0, so this also pins the topmost entry to +0.
-    expect(layout.clones.map((c) => c.offsetX)).toEqual([0]);
-    expect(layout.container.scaleX).toBeCloseTo(cos);
-    expect(layout.container.scaleY).toBe(1);
-    expect(screenLeft(layout, f, 0)).toBeCloseTo((1920 * (1 - cos)) / 2);
-    expect(layout.container.translationY).toBe(0);
+    expect(layout.clones).toEqual([{ offsetX: 0, offsetY: 0, opacity: Math.round(0.85 * 255) }]);
+    expect(layout.container).toEqual({ scale: 1, translationX: 0, translationY: 0 });
   });
 
-  it('keeps the topmost (last) clone at offset 0 and moves each deeper one zStepPx·sin(tilt) further towards the near side', () => {
+  it('keeps the topmost (last) clone in place and moves each deeper one depthStepPx further up-left', () => {
     const frames = [
-      frame(100, 100, 400, 300),
-      frame(200, 150, 400, 300),
-      frame(300, 200, 400, 300),
+      frame(300, 300, 400, 300),
+      frame(300, 300, 400, 300),
+      frame(300, 300, 400, 300),
     ];
     const layout = computeDepthLayout(frames, monitor, tuning);
-    const screenLefts = frames.map((f, i) => screenLeft(layout, f, i));
-    // On screen, each depth level shifts left by zStepPx·sin(tilt) relative to its own x.
-    const shifts = screenLefts.map(
-      (left, i) => left - layout.container.translationX - frames[i].x * cos
-    );
-    expect(shifts[2]).toBeCloseTo(0);
-    expect(shifts[1]).toBeCloseTo(-80 * sin);
-    expect(shifts[0]).toBeCloseTo(-160 * sin);
+    expect(layout.container).toEqual({ scale: 1, translationX: 0, translationY: 0 });
     expect(layout.clones[2].offsetX).toBe(0);
+    expect(layout.clones[2].offsetY).toBe(0);
+    expect(layout.clones[1].offsetX).toBeCloseTo(-step);
+    expect(layout.clones[1].offsetY).toBeCloseTo(-step);
+    expect(layout.clones[0].offsetX).toBeCloseTo(-2 * step);
+    expect(layout.clones[0].offsetY).toBeCloseTo(-2 * step);
   });
 
-  it('does not change size when every clone already fits', () => {
-    const frames = [frame(100, 100, 400, 300), frame(600, 400, 800, 500)];
+  it('points the depth axis the other way when the angle is flipped', () => {
+    const frames = [frame(300, 300, 400, 300), frame(300, 300, 400, 300)];
+    const layout = computeDepthLayout(frames, monitor, { ...tuning, depthAxisDegrees: 225 });
+    expect(layout.clones[0].offsetX).toBeCloseTo(step);
+    expect(layout.clones[0].offsetY).toBeCloseTo(step);
+  });
+
+  it('shifts the plane down-right just enough when deep clones would spill off the top-left', () => {
+    const frames = Array.from({ length: 3 }, () => frame(0, 0, 1920, 1080));
     const layout = computeDepthLayout(frames, monitor, tuning);
-    expect(layout.container.scaleX).toBeCloseTo(cos);
-    expect(layout.container.scaleY).toBe(1);
+    // Extent is 1920 + 2·step by 1080 + 2·step, so it no longer fits at
+    // scale 1; the height is the tighter of the two.
+    expect(layout.container.scale).toBeCloseTo(1080 / (1080 + 2 * step));
+    const [deepestLeft, deepestTop] = screenTopLeft(layout, frames[0], 0);
+    expect(deepestLeft).toBeCloseTo(0);
+    expect(deepestTop).toBeCloseTo(0);
+    const [topLeft, topTop] = screenTopLeft(layout, frames[2], 2);
+    expect(topLeft + 1920 * layout.container.scale).toBeLessThanOrEqual(1920);
+    expect(topTop + 1080 * layout.container.scale).toBeCloseTo(1080);
   });
 
-  it('shifts the plane right just enough when deep clones would spill off the left edge', () => {
-    // Four full-width windows: the deepest one is offset 3·80·sin(15°) ≈ 62 px
-    // to the left, more than the ≈ 33 px the squash frees on each side, while
-    // the whole extent (≈ 1917 px) still fits without scaling.
-    const frames = Array.from({ length: 4 }, () => frame(0, 0, 1920, 1080));
+  it('only translates when the clones fit the monitor after the offsets', () => {
+    const frames = [frame(0, 0, 800, 600), frame(0, 0, 800, 600)];
     const layout = computeDepthLayout(frames, monitor, tuning);
-    expect(layout.container.scaleY).toBe(1);
-    expect(screenLeft(layout, frames[0], 0)).toBeCloseTo(0);
-    const topRight = screenLeft(layout, frames[3], 3) + 1920 * layout.container.scaleX;
-    expect(topRight).toBeLessThanOrEqual(1920);
+    expect(layout.container.scale).toBe(1);
+    expect(layout.container.translationX).toBeCloseTo(step);
+    expect(layout.container.translationY).toBeCloseTo(step);
   });
 
-  it('scales the plane down uniformly when the projected extent is wider than the monitor', () => {
-    const frames = Array.from({ length: 30 }, () => frame(0, 0, 1920, 1080));
-    const layout = computeDepthLayout(frames, monitor, tuning);
-    expect(layout.container.scaleY).toBeLessThan(1);
-    expect(layout.container.scaleX / layout.container.scaleY).toBeCloseTo(cos);
-    const lefts = frames.map((f, i) => screenLeft(layout, f, i));
-    const rights = lefts.map((left) => left + 1920 * layout.container.scaleX);
-    expect(Math.min(...lefts)).toBeCloseTo(0);
-    expect(Math.max(...rights)).toBeCloseTo(1920);
-  });
-
-  it('brings a window that hangs off the bottom back on screen', () => {
-    const f = frame(100, 900, 600, 400);
+  it('brings a window that hangs off the bottom-right back on screen', () => {
+    const f = frame(1500, 900, 600, 400);
     const layout = computeDepthLayout([f], monitor, tuning);
-    expect(layout.container.scaleY).toBe(1);
+    expect(layout.container.scale).toBe(1);
+    expect(layout.container.translationX + 2100).toBeCloseTo(1920);
     expect(layout.container.translationY + 1300).toBeCloseTo(1080);
   });
 
