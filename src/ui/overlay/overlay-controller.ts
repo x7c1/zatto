@@ -1,16 +1,23 @@
 /**
  * Glue layer: connects the pure {@link OverlayStateMachine} to its
- * collaborators (hot corner, overlay actor, modal grab, window mirror)
- * through small interfaces.
+ * collaborators (hot corner, overlay actor, modal grab, window mirror,
+ * real windows) through small interfaces.
  *
  * The controller deliberately depends only on the {@link HotCornerPort},
- * {@link OverlayActorPort}, {@link ModalGrabPort}, and
- * {@link WindowMirrorPort} abstractions — never on `Main` / `Clutter` / `St`
- * / `gi:` directly. This is the seam that lets vitest exercise the full
- * toggle / Esc / debounce / live-clone wiring without booting a real GNOME
- * Shell. Production wiring lives in `extension.ts`, which instantiates the
- * real `HotCornerTrigger`, `OverlayActor`, `GnomeModalGrab`, and
- * `GnomeWindowMirror` and hands them in here.
+ * {@link OverlayActorPort}, {@link ModalGrabPort}, {@link WindowMirrorPort},
+ * and {@link RealWindowsPort} abstractions — never on `Main` / `Clutter` /
+ * `St` / `gi:` directly. This is the seam that lets vitest exercise the
+ * full toggle / Esc / debounce / live-clone wiring without booting a real
+ * GNOME Shell. Production wiring lives in `extension.ts`, which
+ * instantiates the real `HotCornerTrigger`, `OverlayActor`,
+ * `GnomeModalGrab`, `GnomeWindowMirror`, and `GnomeRealWindows` and hands
+ * them in here.
+ *
+ * Transitions: opening mounts the clones on the windows' rects, hides the
+ * real windows in the same call stack (so no frame shows both), and
+ * commits `opened` at once while the clones ease into the depth view.
+ * Closing eases the clones back and stays in `closing` until they land;
+ * only then are the real windows shown and `closed` committed.
  */
 
 import { type OverlayState, OverlayStateMachine } from './overlay-state-machine.js';
@@ -18,6 +25,8 @@ import type {
   HotCornerPort,
   ModalGrabPort,
   OverlayActorPort,
+  RealWindowsPort,
+  RealWindowsSnapshot,
   WindowMirrorPort,
   WindowMirrorSnapshot,
 } from './ports.js';
@@ -44,6 +53,7 @@ export interface OverlayControllerSnapshot {
     lastEnterAt: number | null;
   };
   windowMirror: WindowMirrorSnapshot;
+  realWindows: RealWindowsSnapshot;
 }
 
 /** Source of a wall-clock epoch-ms timestamp. Injected so tests stay deterministic. */
@@ -78,6 +88,7 @@ export class OverlayController {
     private readonly actor: OverlayActorPort,
     private readonly modalGrab: ModalGrabPort,
     private readonly windowMirror: WindowMirrorPort,
+    private readonly realWindows: RealWindowsPort,
     options: OverlayControllerOptions
   ) {
     const debounceMs = options.debounceMs ?? HOTCORNER_DEBOUNCE_MS;
@@ -86,6 +97,10 @@ export class OverlayController {
   }
 
   enable(): void {
+    // A previous instance may have died with the desktop hidden. Restore
+    // is idempotent and cheap, so it always runs before any other wiring.
+    this.realWindows.restore();
+
     this.unsubscribeFsm = this.fsm.onEvent((event) => {
       switch (event.type) {
         case 'open-requested':
@@ -117,12 +132,16 @@ export class OverlayController {
   }
 
   disable(): void {
+    // Bring the real windows back first, before any teardown step that
+    // may throw: a desktop left hidden is unusable.
+    this.realWindows.restore();
     this.hotCorner.disable();
     this.modalGrab.release();
     // Unmount any live clones BEFORE destroying the actor so the clone
     // children get a chance to disconnect their click handlers cleanly
-    // instead of being torn down implicitly with the parent dimmer.
-    this.windowMirror.unmount();
+    // instead of being torn down implicitly with the parent dimmer. The
+    // immediate path also completes a close ease still in flight.
+    this.windowMirror.unmount({ immediate: true });
     this.actor.destroy();
 
     if (this.unsubscribeFsm !== null) {
@@ -147,6 +166,7 @@ export class OverlayController {
         lastEnterAt: this.lastEnterAt,
       },
       windowMirror: this.windowMirror.snapshot(),
+      realWindows: this.realWindows.snapshot(),
     };
   }
 
@@ -164,13 +184,30 @@ export class OverlayController {
     // corner or Esc — the PoC value is "did the API even fire", not "did
     // we always find something to show".
     this.windowMirror.mount(() => this.fsm.dismiss());
-    this.fsm.commitOpened();
+    // The clones now sit exactly on their windows, so hiding the sources
+    // in this same call stack swaps one for the other with no frame of
+    // double image. Anything that throws from here on must not leave the
+    // desktop hidden: restore, then let the failure propagate.
+    try {
+      this.realWindows.hide();
+      this.fsm.commitOpened();
+    } catch (err) {
+      this.realWindows.restore();
+      throw err;
+    }
   }
 
   private handleClose(): void {
     this.modalGrab.release();
-    this.windowMirror.unmount();
     this.actor.hide();
-    this.fsm.commitClosed();
+    // Stay in `closing` (which ignores toggles) until the clones have
+    // eased back onto the windows; show the real windows the moment they
+    // land, under clones that cover them exactly.
+    this.windowMirror.unmount({
+      onDone: () => {
+        this.realWindows.show();
+        this.fsm.commitClosed();
+      },
+    });
   }
 }

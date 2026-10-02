@@ -4,32 +4,43 @@
  * Unlike the pure FSM tests in `overlay-state-machine.test.ts`, these wire
  * the controller against fake hot-corner / overlay-actor / modal-grab
  * implementations and assert the cross-port behavior the controller is
- * responsible for: visibility, grab lifecycle, Esc handling, debounce.
+ * responsible for: visibility, grab lifecycle, Esc handling, debounce, and
+ * hiding / showing the real windows around the clone transitions.
  */
 
 import { describe, expect, it } from 'vitest';
 import { OverlayController } from './overlay-controller.js';
-import { FakeHotCorner, FakeModalGrab, FakeOverlayActor, FakeWindowMirror } from './test-fakes.js';
+import {
+  FakeHotCorner,
+  FakeModalGrab,
+  FakeOverlayActor,
+  FakeRealWindows,
+  FakeWindowMirror,
+} from './test-fakes.js';
 
-function setup(options: { debounceMs?: number } = {}) {
+function setup(options: { debounceMs?: number; enable?: boolean } = {}) {
   let now = 0;
   let epochNow = 1_000_000;
   const hotCorner = new FakeHotCorner();
   const actor = new FakeOverlayActor();
   const modalGrab = new FakeModalGrab();
   const windowMirror = new FakeWindowMirror();
-  const controller = new OverlayController(hotCorner, actor, modalGrab, windowMirror, {
+  const realWindows = new FakeRealWindows();
+  const controller = new OverlayController(hotCorner, actor, modalGrab, windowMirror, realWindows, {
     debounceMs: options.debounceMs ?? 200,
     now: () => now,
     epochNow: () => epochNow,
   });
-  controller.enable();
+  if (options.enable ?? true) {
+    controller.enable();
+  }
   return {
     controller,
     hotCorner,
     actor,
     modalGrab,
     windowMirror,
+    realWindows,
     advance(ms: number) {
       now += ms;
       epochNow += ms;
@@ -188,6 +199,7 @@ describe('OverlayController', () => {
           clonedCount: 0,
           lastActivatedAt: null,
         },
+        realWindows: { hidden: false, lastRestoredAt: 1_000 },
       });
     });
 
@@ -204,6 +216,7 @@ describe('OverlayController', () => {
           clonedCount: 1,
           lastActivatedAt: null,
         },
+        realWindows: { hidden: true, lastRestoredAt: 1_000 },
       });
     });
 
@@ -215,6 +228,7 @@ describe('OverlayController', () => {
       const snap = controller.snapshot();
       expect(snap.overlay).toEqual({ state: 'closed', visible: false });
       expect(snap.hotCorner.lastEnterAt).not.toBeNull();
+      expect(snap.realWindows.hidden).toBe(false);
     });
 
     it('round-trips through JSON without losing fields (D-Bus contract)', () => {
@@ -226,6 +240,7 @@ describe('OverlayController', () => {
       hotCorner.fireEnter();
 
       const snap = controller.snapshot();
+      expect(snap.realWindows).toEqual({ hidden: true, lastRestoredAt: 1_000 });
       expect(JSON.parse(JSON.stringify(snap))).toEqual(snap);
     });
 
@@ -312,6 +327,164 @@ describe('OverlayController', () => {
       hotCorner.fireEnter();
 
       expect(controller.snapshot().windowMirror.clonedCount).toBe(6);
+    });
+  });
+  describe('real windows and the clone transitions', () => {
+    /** Open the overlay with close eases deferred, ready to exercise a close path. */
+    function setupOpen() {
+      const env = setup({ debounceMs: 100 });
+      env.windowMirror.deferUnmountDone = true;
+      env.hotCorner.fireEnter();
+      env.advance(150); // clear the debounce window
+      return env;
+    }
+    type OpenEnv = ReturnType<typeof setupOpen>;
+
+    const closePaths = [
+      {
+        name: 'hot-corner re-entry',
+        close: (env: OpenEnv) => env.hotCorner.fireEnter(),
+      },
+      {
+        name: 'in-overlay corner re-entry',
+        close: (env: OpenEnv) => env.actor.simulateCornerReenter(),
+      },
+      { name: 'Esc', close: (env: OpenEnv) => env.modalGrab.fireEsc() },
+      {
+        name: 'clone click',
+        close: (env: OpenEnv) => env.windowMirror.simulateActivate(42),
+      },
+    ];
+
+    it('enable() restores the real windows before anything else', () => {
+      const { controller, hotCorner, actor, realWindows } = setup({ enable: false });
+      const seen: { mounted: boolean; cornerEnabled: boolean }[] = [];
+      realWindows.onCall = () =>
+        seen.push({ mounted: actor.mounted, cornerEnabled: hotCorner.enabled });
+
+      controller.enable();
+
+      expect(realWindows.calls).toEqual(['restore']);
+      expect(seen).toEqual([{ mounted: false, cornerEnabled: false }]);
+    });
+
+    it('opens from closed by mounting the clones, then hiding the real windows, then committing', () => {
+      const { controller, hotCorner, windowMirror, realWindows } = setup();
+      const atHide: { mountCount: number; state: string }[] = [];
+      realWindows.onCall = (call) => {
+        if (call === 'hide') {
+          atHide.push({
+            mountCount: windowMirror.mountCount,
+            state: controller.snapshot().overlay.state,
+          });
+        }
+      };
+
+      hotCorner.fireEnter();
+
+      expect(atHide).toEqual([{ mountCount: 1, state: 'opening' }]);
+      expect(realWindows.calls).toEqual(['restore', 'hide']);
+      expect(controller.snapshot().overlay.state).toBe('open');
+    });
+
+    for (const { name, close } of closePaths) {
+      it(`closes by ${name}: releases the grab, eases the clones back, shows the real windows only once they land`, () => {
+        const env = setupOpen();
+        const { controller, modalGrab, windowMirror, realWindows } = env;
+
+        close(env);
+
+        expect(modalGrab.isHeld()).toBe(false);
+        expect(windowMirror.unmountCalls).toHaveLength(1);
+        expect(windowMirror.unmountCalls[0].immediate).toBeUndefined();
+        expect(windowMirror.unmountCalls[0].onDone).toBeTypeOf('function');
+        // The close ease is in flight: still closing, real windows still hidden.
+        expect(controller.snapshot().overlay.state).toBe('closing');
+        expect(realWindows.calls).toEqual(['restore', 'hide']);
+
+        windowMirror.finishUnmount();
+
+        expect(realWindows.calls).toEqual(['restore', 'hide', 'show']);
+        expect(controller.snapshot().overlay.state).toBe('closed');
+        expect(controller.snapshot().realWindows.hidden).toBe(false);
+      });
+    }
+
+    it('ignores every toggle while the close ease is in flight', () => {
+      const env = setupOpen();
+      const { controller, hotCorner, actor, modalGrab, windowMirror, realWindows, advance } = env;
+      modalGrab.fireEsc();
+      advance(500); // well past the debounce window
+
+      hotCorner.fireEnter();
+      actor.simulateCornerReenter();
+      modalGrab.fireEsc();
+
+      expect(controller.snapshot().overlay.state).toBe('closing');
+      expect(windowMirror.mountCount).toBe(1);
+      expect(windowMirror.unmountCount).toBe(1);
+      expect(modalGrab.acquireCount).toBe(1);
+      expect(realWindows.calls).toEqual(['restore', 'hide']);
+    });
+
+    it('opens normally again once the close ease has landed', () => {
+      const env = setupOpen();
+      const { controller, hotCorner, modalGrab, windowMirror, realWindows, advance } = env;
+      modalGrab.fireEsc();
+      windowMirror.finishUnmount();
+      advance(150);
+
+      hotCorner.fireEnter();
+
+      expect(controller.snapshot().overlay.state).toBe('open');
+      expect(windowMirror.mountCount).toBe(2);
+      expect(realWindows.calls).toEqual(['restore', 'hide', 'show', 'hide']);
+    });
+
+    it('disable() from open restores the real windows first and unmounts immediately', () => {
+      const { controller, hotCorner, modalGrab, windowMirror, realWindows } = setupOpen();
+      const atRestore: { cornerEnabled: boolean; grabHeld: boolean; unmounts: number }[] = [];
+      realWindows.onCall = (call) => {
+        if (call === 'restore') {
+          atRestore.push({
+            cornerEnabled: hotCorner.enabled,
+            grabHeld: modalGrab.isHeld(),
+            unmounts: windowMirror.unmountCount,
+          });
+        }
+      };
+
+      controller.disable();
+
+      expect(atRestore).toEqual([{ cornerEnabled: true, grabHeld: true, unmounts: 0 }]);
+      expect(realWindows.calls).toEqual(['restore', 'hide', 'restore']);
+      expect(windowMirror.unmountCalls).toEqual([{ immediate: true }]);
+      expect(controller.snapshot().realWindows.hidden).toBe(false);
+    });
+
+    it('disable() during the close ease restores first, unmounts immediately, and completes the close', () => {
+      const { controller, modalGrab, windowMirror, realWindows } = setupOpen();
+      modalGrab.fireEsc();
+      const before = realWindows.calls.length;
+
+      controller.disable();
+
+      expect(realWindows.calls.slice(before)[0]).toBe('restore');
+      expect(windowMirror.unmountCalls.at(-1)).toEqual({ immediate: true });
+      expect(windowMirror.hasPendingUnmount()).toBe(false);
+      expect(controller.snapshot().overlay.state).toBe('closed');
+      expect(controller.snapshot().realWindows.hidden).toBe(false);
+    });
+
+    it('restores the real windows and rethrows when opening fails after hide()', () => {
+      const { controller, hotCorner, realWindows } = setup();
+      const failure = new Error('boom');
+      realWindows.throwAfterHide = failure;
+
+      expect(() => hotCorner.fireEnter()).toThrow(failure);
+
+      expect(realWindows.calls).toEqual(['restore', 'hide', 'restore']);
+      expect(controller.snapshot().realWindows.hidden).toBe(false);
     });
   });
 });

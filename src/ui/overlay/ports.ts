@@ -15,6 +15,7 @@
  * - {@link OverlayActorPort} -> `OverlayActor` (`overlay-actor.ts`)
  * - {@link ModalGrabPort} -> `GnomeModalGrab` (`libs/shell/gnome-modal-grab.ts`)
  * - {@link WindowMirrorPort} -> `GnomeWindowMirror` (`gnome-window-mirror.ts`)
+ * - {@link RealWindowsPort} -> `GnomeRealWindows` (`gnome-real-windows.ts`)
  */
 
 /**
@@ -40,7 +41,9 @@ export interface HotCornerPort {
  * clones).
  *
  * The controller does not care about the actor's internal hierarchy; it only
- * needs to mount it, toggle its visibility, and tear it down.
+ * needs to mount it, toggle its visibility, and tear it down. {@link show}
+ * and {@link hide} may fade the dim shade; {@link isVisible} reports the
+ * intent (`true` from `show()` until `hide()`), not the fade progress.
  *
  * The actor also owns an in-overlay corner sensor — a small reactive child of
  * the dimmer covering the same rect as {@link HotCornerPort}. While the modal
@@ -56,7 +59,7 @@ export interface OverlayActorPort {
   show(): void;
   /** Hide the actor. No-op if not mounted. */
   hide(): void;
-  /** Whether the actor is currently visible to the user. */
+  /** Whether the overlay is meant to be visible (set by `show()`, cleared by `hide()`). */
   isVisible(): boolean;
   /**
    * Register the single re-entry handler fired when the cursor enters the
@@ -112,15 +115,30 @@ export interface WindowMirrorSnapshot {
   readonly lastActivatedAt: number | null;
 }
 
+/** Options for {@link WindowMirrorPort.unmount}. */
+export interface UnmountOptions {
+  /**
+   * Tear the clones down synchronously instead of easing them back onto
+   * their windows. Used when the actor tree is about to be destroyed.
+   */
+  readonly immediate?: boolean;
+  /**
+   * Called exactly once when the clones are gone: after the close ease
+   * lands, or before `unmount()` returns on the immediate path.
+   */
+  readonly onDone?: () => void;
+}
+
 /**
  * Mirrors the open windows into the overlay as live `Clutter.Clone` actors
  * and routes a click on a clone back into a window activation
  * (`MetaWindow.activate`).
  *
- * The production implementation mirrors every eligible top-level window at
- * its own on-screen position. The {@link mount} return value reflects
- * whether *any* clone was attached, so the controller can keep the dimmer
- * open even when no windows qualify.
+ * The production implementation creates every clone at its window's
+ * on-screen position and eases it into the depth view on {@link mount},
+ * and eases it back onto the window on {@link unmount}. The {@link mount}
+ * return value reflects whether *any* clone was attached, so the controller
+ * can keep the dimmer open even when no windows qualify.
  */
 export interface WindowMirrorPort {
   /**
@@ -135,10 +153,46 @@ export interface WindowMirrorPort {
    */
   mount(onActivated: () => void): boolean;
   /**
-   * Synchronously tear down any clones currently attached. Must be
-   * idempotent.
+   * Remove the clones currently attached. Without `immediate`, cancels any
+   * ease in flight, eases the clones back onto their windows from wherever
+   * they are, and tears them down when the ease lands. With `immediate`, or
+   * when animations are disabled, tears down synchronously. Either way
+   * `onDone` is called exactly once; an animated close still in flight when
+   * a later call tears the clones down immediately has its `onDone` called
+   * by that teardown. Must be idempotent.
    */
-  unmount(): void;
+  unmount(options?: UnmountOptions): void;
   /** Cheap state snapshot for the D-Bus Inspect endpoint. */
   snapshot(): WindowMirrorSnapshot;
+}
+
+/**
+ * Read-only snapshot of the real-windows state exposed through the D-Bus
+ * Inspect endpoint.
+ */
+export interface RealWindowsSnapshot {
+  /** Whether the port last hid the real windows (intent, not live Clutter state). */
+  readonly hidden: boolean;
+  /** Epoch ms of the most recent {@link RealWindowsPort.restore}, or `null` if never. */
+  readonly lastRestoredAt: number | null;
+}
+
+/**
+ * Hides and shows the real window actors while the overlay is open, so the
+ * clones replace the windows instead of being painted over them.
+ *
+ * Safety contract: {@link restore} is synchronous, idempotent and always
+ * safe to call. The controller calls it first on `enable()` (a previous
+ * instance may have died with the desktop hidden), first on `disable()`,
+ * and when opening throws after {@link hide}.
+ */
+export interface RealWindowsPort {
+  /** Hide the real windows synchronously, with no fade. */
+  hide(): void;
+  /** Show the real windows synchronously, with no fade. */
+  show(): void;
+  /** Cancel any transition and force the real windows visible and opaque. */
+  restore(): void;
+  /** Cheap state snapshot for the D-Bus Inspect endpoint. */
+  snapshot(): RealWindowsSnapshot;
 }
