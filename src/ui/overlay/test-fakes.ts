@@ -12,6 +12,9 @@ import type {
   HotCornerPort,
   ModalGrabPort,
   OverlayActorPort,
+  RealWindowsPort,
+  RealWindowsSnapshot,
+  UnmountOptions,
   WindowMirrorPort,
   WindowMirrorSnapshot,
 } from './ports.js';
@@ -124,6 +127,13 @@ export class FakeModalGrab implements ModalGrabPort {
 export class FakeWindowMirror implements WindowMirrorPort {
   mountCount = 0;
   unmountCount = 0;
+  /** The options of every `unmount()` call, in order. */
+  readonly unmountCalls: UnmountOptions[] = [];
+  /**
+   * When `true`, an animated `unmount()` keeps its `onDone` pending (an
+   * ease in flight) until {@link finishUnmount} or an immediate unmount.
+   */
+  deferUnmountDone = false;
   /** Toggle to make the next `mount()` report "no eligible window". */
   mountShouldFindNoWindow = false;
   /**
@@ -135,6 +145,7 @@ export class FakeWindowMirror implements WindowMirrorPort {
   lastActivatedAt: number | null = null;
   private clonedCount = 0;
   private activatedHandler: (() => void) | null = null;
+  private pendingDone: (() => void)[] = [];
 
   mount(onActivated: () => void): boolean {
     this.mountCount++;
@@ -148,10 +159,35 @@ export class FakeWindowMirror implements WindowMirrorPort {
     return this.clonedCount > 0;
   }
 
-  unmount(): void {
+  unmount(options: UnmountOptions = {}): void {
     this.unmountCount++;
+    this.unmountCalls.push(options);
     this.activatedHandler = null;
+    if (this.deferUnmountDone && options.immediate !== true) {
+      if (options.onDone !== undefined) {
+        this.pendingDone.push(options.onDone);
+      }
+      return;
+    }
+    // Like production, an immediate teardown also completes a close that
+    // was still easing.
+    this.finishUnmount();
+    options.onDone?.();
+  }
+
+  /** Whether an animated unmount is still waiting to land. */
+  hasPendingUnmount(): boolean {
+    return this.pendingDone.length > 0;
+  }
+
+  /** Test helper: land the close ease(s) deferred by {@link deferUnmountDone}. */
+  finishUnmount(): void {
     this.clonedCount = 0;
+    const done = this.pendingDone;
+    this.pendingDone = [];
+    for (const onDone of done) {
+      onDone();
+    }
   }
 
   snapshot(): WindowMirrorSnapshot {
@@ -173,5 +209,51 @@ export class FakeWindowMirror implements WindowMirrorPort {
     }
     this.lastActivatedAt = at;
     this.activatedHandler();
+  }
+}
+
+export type RealWindowsCall = 'hide' | 'show' | 'restore';
+
+export class FakeRealWindows implements RealWindowsPort {
+  /** Every call, in order. */
+  readonly calls: RealWindowsCall[] = [];
+  /** Epoch ms that the next `restore()` records as `lastRestoredAt`. */
+  restoreAt = 1_000;
+  /** Test helper: make `hide()` hide and then throw. */
+  throwAfterHide: Error | null = null;
+  /** Observer invoked on every call, after it is recorded. */
+  onCall: ((call: RealWindowsCall) => void) | null = null;
+  private hidden = false;
+  private lastRestoredAt: number | null = null;
+
+  hide(): void {
+    this.record('hide');
+    this.hidden = true;
+    if (this.throwAfterHide !== null) {
+      throw this.throwAfterHide;
+    }
+  }
+
+  show(): void {
+    this.record('show');
+    this.hidden = false;
+  }
+
+  restore(): void {
+    this.record('restore');
+    this.hidden = false;
+    this.lastRestoredAt = this.restoreAt;
+  }
+
+  snapshot(): RealWindowsSnapshot {
+    return {
+      hidden: this.hidden,
+      lastRestoredAt: this.lastRestoredAt,
+    };
+  }
+
+  private record(call: RealWindowsCall): void {
+    this.calls.push(call);
+    this.onCall?.(call);
   }
 }

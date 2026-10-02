@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { computeDepthLayout, type DepthViewLayout, type Rect } from './depth-layout.js';
 
-const tuning = { depthAxisDegrees: 45, depthStepPx: 32, opacity: 0.85 };
+const tuning = { depthAxisDegrees: 45, depthStepPx: 32, opacity: 0.85, transitionMs: 250 };
 const monitor = { width: 1920, height: 1080 };
 /** One level away from the viewer: up and to the left along the 45° axis. */
 const step = 32 / Math.SQRT2;

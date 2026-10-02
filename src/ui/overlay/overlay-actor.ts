@@ -1,7 +1,11 @@
 /**
  * Overlay actor: full-monitor dimmer that hosts live window clones.
  *
- * The dimmer itself is reactive so it absorbs background clicks. The
+ * The dimmer itself is reactive so it absorbs background clicks, and it
+ * is the modal grab actor. It stays transparent: the dim colour lives on a
+ * separate full-monitor shade child below the clone container, so fading
+ * the shade in on `show()` and out on `hide()` does not fade the clones
+ * with it (they ease on their own, see `gnome-window-mirror.ts`). The
  * "what does the user see" content is supplied by the
  * {@link WindowMirrorPort} production implementation, which adds live
  * `Clutter.Clone` actors as children of the dedicated clone container
@@ -13,14 +17,19 @@
 import Clutter from 'gi://Clutter';
 import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import { shouldAnimate } from '../../libs/shell/animations.js';
 import { safeAddChrome } from '../../libs/shell/safe-add-chrome.js';
+import { DEPTH_VIEW_TUNING } from './depth-layout.js';
 import { HOT_CORNER_SIZE } from './hot-corner-trigger.js';
 import type { OverlayActorPort } from './ports.js';
 
-const DIMMER_STYLE = 'background-color: rgba(0, 0, 0, 0.5);';
+const EASE_MODE = Clutter.AnimationMode.EASE_OUT_QUAD;
+
+const SHADE_STYLE = 'background-color: rgba(0, 0, 0, 0.5);';
 
 export class OverlayActor implements OverlayActorPort {
   private dimmer: St.Widget | null = null;
+  private shade: St.Widget | null = null;
   private cloneContainer: St.Widget | null = null;
   private dimmerMotionId: number | null = null;
   private cornerLatched = false;
@@ -47,7 +56,6 @@ export class OverlayActor implements OverlayActorPort {
     }
 
     const dimmer = new St.Widget({
-      style: DIMMER_STYLE,
       reactive: true,
       visible: false,
       x: monitor.x,
@@ -61,6 +69,19 @@ export class OverlayActor implements OverlayActorPort {
       layout_manager: new Clutter.FixedLayout(),
     });
     dimmer.add_style_class_name('zatto-overlay-dimmer');
+
+    // The dim colour, below the clones. Its opacity is what fades.
+    const shade = new St.Widget({
+      style: SHADE_STYLE,
+      x: 0,
+      y: 0,
+      width: monitor.width,
+      height: monitor.height,
+      reactive: false,
+      opacity: 0,
+    });
+    shade.add_style_class_name('zatto-overlay-shade');
+    dimmer.add_child(shade);
 
     // Dedicated child container for clones. Keeping clones in their own
     // container (rather than attaching them directly to the dimmer) keeps
@@ -109,25 +130,52 @@ export class OverlayActor implements OverlayActorPort {
 
     safeAddChrome(dimmer);
     this.dimmer = dimmer;
+    this.shade = shade;
     this.cloneContainer = cloneContainer;
     this.mounted = true;
   }
 
   show(): void {
-    if (this.dimmer === null) {
+    const { dimmer, shade } = this;
+    if (dimmer === null || shade === null) {
       return;
     }
-    this.dimmer.show();
+    // Cancel a fade-out in flight so its completion does not hide the
+    // dimmer we are showing again; the fade-in starts from where it was.
+    shade.remove_all_transitions();
+    dimmer.reactive = true;
+    dimmer.show();
+    if (shouldAnimate()) {
+      shade.ease({ opacity: 255, duration: DEPTH_VIEW_TUNING.transitionMs, mode: EASE_MODE });
+    } else {
+      shade.opacity = 255;
+    }
     this.visible = true;
   }
 
   hide(): void {
-    if (this.dimmer === null) {
+    const { dimmer, shade } = this;
+    if (dimmer === null || shade === null) {
       return;
     }
-    this.dimmer.hide();
     this.visible = false;
     this.cornerLatched = false;
+    shade.remove_all_transitions();
+    // The dimmer stays on stage while the shade fades and the clones it
+    // hosts ease back; stop it from swallowing clicks meanwhile.
+    dimmer.reactive = false;
+    if (shouldAnimate()) {
+      shade.ease({
+        opacity: 0,
+        duration: DEPTH_VIEW_TUNING.transitionMs,
+        mode: EASE_MODE,
+        // Only on a finished fade: a `show()` cancelling it keeps the dimmer.
+        onComplete: () => dimmer.hide(),
+      });
+    } else {
+      shade.opacity = 0;
+      dimmer.hide();
+    }
   }
 
   isVisible(): boolean {
@@ -155,6 +203,9 @@ export class OverlayActor implements OverlayActorPort {
       this.dimmer.disconnect(this.dimmerMotionId);
       this.dimmerMotionId = null;
     }
+    // A pending fade's completion must not touch a destroyed dimmer.
+    this.shade?.remove_all_transitions();
+    this.shade = null;
     if (this.dimmer !== null) {
       Main.layoutManager.removeChrome(this.dimmer);
       // The clone container is a child of the dimmer and gets destroyed

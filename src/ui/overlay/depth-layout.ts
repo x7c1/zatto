@@ -46,12 +46,20 @@ export interface DepthViewTuning {
   readonly depthStepPx: number;
   /** Opacity of every clone, as a fraction in 0..1. */
   readonly opacity: number;
+  /**
+   * Duration of the ease between the desktop and the depth view, in ms.
+   * Not an input to {@link computeDepthLayout}; it lives here so all the
+   * depth view's knobs sit in one place. 250 ms matches gnome-shell's
+   * Activities Overview.
+   */
+  readonly transitionMs: number;
 }
 
 export const DEPTH_VIEW_TUNING: DepthViewTuning = {
   depthAxisDegrees: 45,
   depthStepPx: 32,
   opacity: 0.85,
+  transitionMs: 250,
 };
 
 export interface Rect {
