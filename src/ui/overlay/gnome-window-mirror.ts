@@ -4,8 +4,12 @@
  * Enumerates every eligible top-level window and mirrors each one into
  * the overlay as a reactive clone placed at the source window's own
  * on-screen frame rect (relative to the primary monitor). Nothing is
- * moved or resized: the overlay shows the windows exactly where they
- * already are. Clicking a clone activates its window.
+ * moved or resized in x, y. Instead the stacking order is rendered as
+ * depth under a parallel oblique projection: each clone is offset along
+ * the depth axis by how many windows sit above it and drawn translucent,
+ * and the whole set is scaled down and shifted only if needed to stay on
+ * the monitor (see `depth-layout.ts` for the geometry and tuning).
+ * Clicking a clone activates its window.
  *
  * Three Mutter / Clutter API points this mirror sits on top of:
  *
@@ -24,6 +28,7 @@ import Clutter from 'gi://Clutter';
 import Meta from 'gi://Meta';
 import type St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import { computeDepthLayout, DEPTH_VIEW_TUNING, type Rect } from './depth-layout.js';
 import type { WindowMirrorPort, WindowMirrorSnapshot } from './ports.js';
 
 /** A clone we mounted plus the bookkeeping we need to tear it down cleanly. */
@@ -67,20 +72,40 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       return false;
     }
 
-    for (const { actor, win } of this.collectEligible()) {
-      const frame = win.get_frame_rect();
-      if (frame.width <= 0 || frame.height <= 0) {
-        // Mutter occasionally hands back 0x0 mid-resize. Skip rather than
-        // mount an invisible-but-reactive clone.
-        continue;
-      }
+    // Bottom-to-top, as `global.get_window_actors()` returns them. Clutter
+    // paints children in insertion order and does not depth-sort, so the
+    // topmost window must be added last.
+    const entries = this.collectEligible()
+      .map(({ actor, win }) => {
+        const frame = win.get_frame_rect();
+        const rect: Rect = {
+          x: frame.x - monitor.x,
+          y: frame.y - monitor.y,
+          width: frame.width,
+          height: frame.height,
+        };
+        return { actor, win, rect };
+      })
+      // Mutter occasionally hands back 0x0 mid-resize. Skip rather than
+      // mount an invisible-but-reactive clone.
+      .filter(({ rect }) => rect.width > 0 && rect.height > 0);
+    const layout = computeDepthLayout(
+      entries.map(({ rect }) => rect),
+      { width: monitor.width, height: monitor.height },
+      DEPTH_VIEW_TUNING
+    );
 
+    entries.forEach(({ actor, win, rect }, index) => {
       const clone = new Clutter.Clone({
         source: actor,
         reactive: true,
       });
-      clone.set_position(frame.x - monitor.x, frame.y - monitor.y);
-      clone.set_size(frame.width, frame.height);
+      const placement = layout.clones[index];
+      clone.set_position(rect.x + (placement?.offsetX ?? 0), rect.y + (placement?.offsetY ?? 0));
+      clone.set_size(rect.width, rect.height);
+      if (placement !== undefined) {
+        clone.opacity = placement.opacity;
+      }
 
       const clickHandlerId = clone.connect('button-press-event', () => {
         this.activateWindow(win);
@@ -90,12 +115,26 @@ export class GnomeWindowMirror implements WindowMirrorPort {
 
       container.add_child(clone);
       this.clones.push({ clone, clickHandlerId });
-    }
+    });
+
+    // Fit once, on the container, so every window keeps its x, y
+    // relationship: the scale and shift are identity unless the offset
+    // clones would leave the monitor.
+    const { scale, translationX, translationY } = layout.container;
+    container.set_pivot_point(0, 0);
+    container.set_scale(scale, scale);
+    container.set_translation(translationX, translationY, 0);
 
     return this.clones.length > 0;
   }
 
   unmount(): void {
+    // Restore an untransformed container so the next mount starts flat.
+    const container = this.getContainer();
+    if (container !== null) {
+      container.set_scale(1, 1);
+      container.set_translation(0, 0, 0);
+    }
     for (const mounted of this.clones) {
       this.disposeClone(mounted);
     }
