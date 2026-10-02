@@ -17,6 +17,7 @@ export default class ZattoExtension extends Extension {
   private dbusReloader: DBusReloader | null = null;
   private dbusInspector: DBusInspector | null = null;
   private overlayController: OverlayController | null = null;
+  private realWindows: GnomeRealWindows | null = null;
 
   enable() {
     console.log('[Zatto] Extension enabled');
@@ -35,6 +36,7 @@ export default class ZattoExtension extends Extension {
     const hotCorner = new HotCornerTrigger();
     const windowMirror = new GnomeWindowMirror(() => actor.getCloneContainer());
     const realWindows = new GnomeRealWindows();
+    this.realWindows = realWindows;
     this.overlayController = new OverlayController(
       hotCorner,
       actor,
@@ -68,6 +70,10 @@ export default class ZattoExtension extends Extension {
 
     safeDisable('overlayController', () => this.overlayController?.disable());
     this.overlayController = null;
+
+    // After the controller has restored the windows, drop the backdrop actor.
+    safeDisable('realWindows', () => this.realWindows?.destroy());
+    this.realWindows = null;
   }
 
   private initializeDBusReloader(): DBusReloader | null {
