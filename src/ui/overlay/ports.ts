@@ -17,11 +17,9 @@
  * - {@link WindowMirrorPort} -> `GnomeWindowMirror` (`gnome-window-mirror.ts`)
  */
 
-import type { ZoneConfig } from './zone-config.js';
-
 /**
  * Bottom-left hot corner. Fires {@link HotCornerPort.onEnter} every time the
- * cursor enters the trigger zone; the controller is responsible for debouncing
+ * cursor enters the corner rect; the controller is responsible for debouncing
  * via its FSM.
  */
 export interface HotCornerPort {
@@ -38,7 +36,8 @@ export interface HotCornerPort {
 }
 
 /**
- * The visible overlay surface (dimmer + centered card for the PoC).
+ * The visible overlay surface (a full-monitor dimmer hosting the window
+ * clones).
  *
  * The controller does not care about the actor's internal hierarchy; it only
  * needs to mount it, toggle its visibility, and tear it down.
@@ -99,57 +98,29 @@ export interface ModalGrabPort {
 }
 
 /**
- * Per-zone breakdown of mounted clones. Keys are zone identifiers
- * (whatever the active {@link ZoneConfig} defines — four quadrants by
- * default, but loader-provided configs may add or replace them); each
- * value is the count of clones currently mounted in that zone (zero if
- * the zone is empty).
- *
- * Kept as a plain string-keyed record so the port surface stays
- * self-describing and the Inspect endpoint contract does not bake in
- * the production zone set. Consumers that need stable key order should
- * iterate over `zoneConfig.zones` from the same snapshot.
- */
-export type WindowMirrorByZone = Readonly<Record<string, number>>;
-
-/**
  * Read-only snapshot of the window-mirror state exposed through the D-Bus
  * Inspect endpoint. Kept tiny on purpose — every field has to earn its keep
  * — so external tooling has a stable contract to depend on.
  */
 export interface WindowMirrorSnapshot {
-  /** How many live clones are currently mounted across all zones. */
+  /** How many live clones are currently mounted. */
   readonly clonedCount: number;
-  /** Per-zone clone counts. Sum of the values equals {@link clonedCount}. */
-  readonly byZone: WindowMirrorByZone;
   /**
    * Epoch ms of the most recent time the mirrored window was activated via a
    * clone click, or `null` if no activation has happened yet.
    */
   readonly lastActivatedAt: number | null;
-  /**
-   * The {@link ZoneConfig} the mirror is currently using to lay out
-   * clones. Optional only so test fakes can omit it; the production
-   * `GnomeWindowMirror` always populates this field. Echoing the live
-   * config in the Inspect snapshot lets external tooling (and the
-   * human running `gdbus`) verify which routing table and which zone
-   * rectangles are in effect without poking at the extension source.
-   */
-  readonly zoneConfig?: ZoneConfig;
 }
 
 /**
- * Mirrors one or more open windows into the overlay as live `Clutter.Clone`
- * thumbnails and routes a click on a clone back into a window activation
+ * Mirrors the open windows into the overlay as live `Clutter.Clone` actors
+ * and routes a click on a clone back into a window activation
  * (`MetaWindow.activate`).
  *
- * For PoC step 4 the production implementation mirrors every eligible
- * top-level window, routes each into one of four quadrant zones by
- * `wm_class`, and auto-grids same-zone windows inside the zone rect. The
- * {@link mount} return value still reflects whether *any* clone was
- * attached, so the controller can keep the dimmer open even when no
- * windows qualify. The port surface (`mount` / `unmount` / `snapshot`) is
- * unchanged from step 3 — zone routing is an implementation detail.
+ * The production implementation mirrors every eligible top-level window at
+ * its own on-screen position. The {@link mount} return value reflects
+ * whether *any* clone was attached, so the controller can keep the dimmer
+ * open even when no windows qualify.
  */
 export interface WindowMirrorPort {
   /**
@@ -164,17 +135,10 @@ export interface WindowMirrorPort {
    */
   mount(onActivated: () => void): boolean;
   /**
-   * Unmount any clones currently attached. Must be idempotent.
-   *
-   * When `options.immediate` is `true`, implementations must tear the
-   * clones down synchronously without playing the unmount ease, even
-   * when easing is otherwise enabled. The controller uses this on the
-   * `disable()` path where the actor tree is about to be destroyed —
-   * easing children of a doomed parent wastes work and risks
-   * fired-after-destroy callbacks. Normal close paths (corner re-enter,
-   * Esc, clone click) pass no options and get the animated teardown.
+   * Synchronously tear down any clones currently attached. Must be
+   * idempotent.
    */
-  unmount(options?: { readonly immediate?: boolean }): void;
+  unmount(): void;
   /** Cheap state snapshot for the D-Bus Inspect endpoint. */
   snapshot(): WindowMirrorSnapshot;
 }

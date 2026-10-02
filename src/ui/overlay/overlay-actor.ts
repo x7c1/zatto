@@ -1,6 +1,5 @@
 /**
- * Overlay actor: full-monitor dimmer that hosts live window clones routed
- * into quadrant zones.
+ * Overlay actor: full-monitor dimmer that hosts live window clones.
  *
  * The dimmer itself is reactive so it absorbs background clicks. The
  * "what does the user see" content is supplied by the
@@ -8,8 +7,7 @@
  * `Clutter.Clone` actors as children of the dedicated clone container
  * returned by {@link OverlayActor.getCloneContainer}. The clone container
  * uses `Clutter.FixedLayout` so the window mirror can position each clone
- * by absolute monitor-relative coordinates (zone routing + auto-grid
- * happens in `gnome-window-mirror.ts` / `zone-layout.ts`).
+ * by absolute monitor-relative coordinates (see `gnome-window-mirror.ts`).
  */
 
 import Clutter from 'gi://Clutter';
@@ -59,14 +57,14 @@ export class OverlayActor implements OverlayActorPort {
       // FixedLayout lets the clone container (and the window mirror that
       // populates it) place children by absolute monitor-relative
       // coordinates. BinLayout would force-center every child, breaking
-      // zone routing.
+      // in-place positioning.
       layout_manager: new Clutter.FixedLayout(),
     });
     dimmer.add_style_class_name('zatto-overlay-dimmer');
 
     // Dedicated child container for clones. Keeping clones in their own
     // container (rather than attaching them directly to the dimmer) keeps
-    // the dimmer free to host other chrome later (e.g. zone outlines,
+    // the dimmer free to host other chrome later (e.g. outlines or
     // labels) without those decorations sharing the clones' input routing.
     const cloneContainer = new St.Widget({
       x: 0,
@@ -145,8 +143,7 @@ export class OverlayActor implements OverlayActorPort {
    * The dedicated child container clones are parented to. It uses
    * `Clutter.FixedLayout` so the {@link WindowMirrorPort} production
    * implementation can position each clone at an absolute monitor-relative
-   * coordinate (zone routing + auto-grid lives in `gnome-window-mirror.ts`
-   * and `zone-layout.ts`).
+   * coordinate (see `gnome-window-mirror.ts`).
    */
   getCloneContainer(): St.Widget | null {
     return this.cloneContainer;

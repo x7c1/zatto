@@ -43,7 +43,7 @@ const DBUS_INTERFACE_XML = `
 /**
  * Anything that can hand back a JSON-serializable state blob. Kept as a
  * one-method interface so the inspector is not coupled to OverlayController
- * directly — future state contributors (e.g. a window-zone picker) can be
+ * directly — other state contributors can be
  * composed in via a wrapper that merges multiple snapshots.
  */
 export interface StateProvider {

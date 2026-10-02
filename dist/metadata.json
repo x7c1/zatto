@@ -1,7 +1,7 @@
 {
   "uuid": "zatto@x7c1.github.io",
   "name": "Zatto",
-  "description": "GNOME Shell extension for picking windows grouped into per-app screen zones",
+  "description": "GNOME Shell extension that lifts a window one or two layers behind the active one, without moving anything on screen",
   "shell-version": [
     "50"
   ],

@@ -162,39 +162,6 @@ describe('OverlayController', () => {
     // handler is disconnected explicitly, not implicitly via parent
     // destruction.
     expect(windowMirror.unmountCount).toBeGreaterThanOrEqual(1);
-    // disable() must force the synchronous unmount path: easing into a
-    // doomed parent is wasted work and risks fire-after-destroy
-    // callbacks. Normal close paths (corner re-enter, Esc, clone click)
-    // are covered separately below.
-    expect(windowMirror.lastUnmountImmediate).toBe(true);
-  });
-
-  it('uses the animated unmount path for user-driven close paths', () => {
-    // The opposite of the disable() invariant above: when the user
-    // dismisses via Esc, the corner sensor, or a clone click, the
-    // overlay's actor tree stays alive long enough for the unmount
-    // ease to land on screen, so we must NOT force the immediate path.
-    // Sample all three user-driven paths in one test rather than
-    // duplicating the setup boilerplate per path.
-    const samples = ['esc', 'corner', 'click'] as const;
-    for (const path of samples) {
-      const { actor, hotCorner, modalGrab, windowMirror, advance } = setup({ debounceMs: 100 });
-      hotCorner.fireEnter();
-      advance(150); // clear the debounce window for the corner-reenter case
-
-      if (path === 'esc') {
-        modalGrab.fireEsc();
-      } else if (path === 'corner') {
-        actor.simulateCornerReenter();
-      } else {
-        windowMirror.simulateActivate(1_700_000_000_000);
-      }
-
-      const lastImmediate = windowMirror.lastUnmountImmediate;
-      // Either explicitly false or undefined (no options passed) is
-      // acceptable — both leave the port free to play the unmount ease.
-      expect(lastImmediate === true).toBe(false);
-    }
   });
 
   it('ignores hot-corner enters that arrive after disable()', () => {
@@ -214,16 +181,11 @@ describe('OverlayController', () => {
     it('reports closed state with no hot-corner history initially', () => {
       const { controller } = setup();
 
-      // The fake mirror starts with an empty `byZone` (no clones
-      // mounted yet); the production mirror would seed the configured
-      // zone keys at zero, but the snapshot contract only guarantees
-      // that the values sum to `clonedCount`, not which zones appear.
       expect(controller.snapshot()).toEqual({
         overlay: { state: 'closed', visible: false },
         hotCorner: { lastEnterAt: null },
         windowMirror: {
           clonedCount: 0,
-          byZone: {},
           lastActivatedAt: null,
         },
       });
@@ -240,7 +202,6 @@ describe('OverlayController', () => {
         hotCorner: { lastEnterAt: 1_700_000_000_000 },
         windowMirror: {
           clonedCount: 1,
-          byZone: { bottomRight: 1 },
           lastActivatedAt: null,
         },
       });
@@ -304,9 +265,9 @@ describe('OverlayController', () => {
     });
 
     it('closes the overlay when the user clicks the mirrored clone', () => {
-      // Core PoC-step-3 behavior: clicking a live clone has to both raise
-      // the underlying window (the port handles that internally) AND
-      // collapse the overlay so the user sees the result immediately.
+      // Clicking a live clone has to both raise the underlying window (the
+      // port handles that internally) AND collapse the overlay so the user
+      // sees the result immediately.
       const { actor, hotCorner, modalGrab, windowMirror } = setup();
       hotCorner.fireEnter();
 
@@ -344,29 +305,13 @@ describe('OverlayController', () => {
       expect(snap.windowMirror.clonedCount).toBe(0);
     });
 
-    it('exposes per-zone clone counts in the snapshot after a multi-zone mount', () => {
-      // The controller does not own the zone routing (the production
-      // `GnomeWindowMirror` does), so this test just confirms that whatever
-      // `byZone` shape the port reports lands intact in the snapshot — the
-      // Inspect endpoint contract surface.
+    it('surfaces the mounted clone count in the snapshot while open', () => {
       const { controller, hotCorner, windowMirror } = setup();
-      windowMirror.nextMountByZone = {
-        topLeft: 2,
-        topRight: 1,
-        bottomLeft: 0,
-        bottomRight: 3,
-      };
+      windowMirror.nextMountCount = 6;
 
       hotCorner.fireEnter();
 
-      const snap = controller.snapshot();
-      expect(snap.windowMirror.clonedCount).toBe(6);
-      expect(snap.windowMirror.byZone).toEqual({
-        topLeft: 2,
-        topRight: 1,
-        bottomLeft: 0,
-        bottomRight: 3,
-      });
+      expect(controller.snapshot().windowMirror.clonedCount).toBe(6);
     });
   });
 });
