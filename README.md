@@ -1,12 +1,12 @@
 # zatto
 
-A GNOME Shell extension that picks windows from per-app screen zones.
+A GNOME Shell extension that lifts a window sitting one or two layers behind the active one, without moving anything on screen.
 
-GNOME's Activities overview shows every window in a uniform grid that re-shuffles each time, so locating a target window still costs a deliberate visual search. zatto pins app categories to fixed screen zones (e.g. top-left = development, top-right = utilities, bottom-left = social), so the same window always lands in the same place. Position becomes muscle memory — the way grouping apps on a phone's home screen lets you tap without looking.
+Switching to a window that is already visible on screen, just partially hidden behind the active one, should not require a full re-arranged overview. You already know where the window is. zatto keeps every window at its own position and lets you bring the one you want to the front.
 
 ## Status
 
-Pre-implementation — design only. No code shipped yet.
+Proof of concept. Entering the bottom-left hot corner opens an overlay that mirrors the open windows in place; clicking one raises it, and Esc or re-entering the corner closes the overlay. A depth view (stacking order rendered as depth, with the windows under the cursor cycled by the scroll wheel) is in progress.
 
 ## License
 

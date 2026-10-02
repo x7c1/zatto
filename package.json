@@ -1,7 +1,7 @@
 {
   "name": "zatto",
   "version": "0.0.1",
-  "description": "GNOME Shell extension for picking windows grouped into per-app screen zones",
+  "description": "GNOME Shell extension that lifts a window one or two layers behind the active one, without moving anything on screen",
   "main": "extension.js",
   "scripts": {
     "build": "tsc --build && node esbuild.config.js",

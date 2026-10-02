@@ -11,7 +11,6 @@ import { GnomeWindowMirror } from './ui/overlay/gnome-window-mirror.js';
 import { HotCornerTrigger } from './ui/overlay/hot-corner-trigger.js';
 import { OverlayActor } from './ui/overlay/overlay-actor.js';
 import { OverlayController } from './ui/overlay/overlay-controller.js';
-import { DEFAULT_ZONE_CONFIG } from './ui/overlay/zone-config.js';
 
 export default class ZattoExtension extends Extension {
   private dbusReloader: DBusReloader | null = null;
@@ -33,10 +32,7 @@ export default class ZattoExtension extends Extension {
     const actor = new OverlayActor();
     const modalGrab = new GnomeModalGrab(() => actor.getGrabActor());
     const hotCorner = new HotCornerTrigger();
-    const windowMirror = new GnomeWindowMirror(
-      () => actor.getCloneContainer(),
-      DEFAULT_ZONE_CONFIG
-    );
+    const windowMirror = new GnomeWindowMirror(() => actor.getCloneContainer());
     this.overlayController = new OverlayController(hotCorner, actor, modalGrab, windowMirror, {
       // Monotonic ms — GLib reports microseconds, convert once.
       now: () => GLib.get_monotonic_time() / 1000,

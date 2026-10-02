@@ -12,7 +12,6 @@ import type {
   HotCornerPort,
   ModalGrabPort,
   OverlayActorPort,
-  WindowMirrorByZone,
   WindowMirrorPort,
   WindowMirrorSnapshot,
 } from './ports.js';
@@ -33,7 +32,7 @@ export class FakeHotCorner implements HotCornerPort {
     this.handler = handler;
   }
 
-  /** Test helper: simulate a hover into the trigger zone. */
+  /** Test helper: simulate a hover into the trigger area. */
   fireEnter(): void {
     this.handler?.();
   }
@@ -70,7 +69,7 @@ export class FakeOverlayActor implements OverlayActorPort {
 
   /**
    * Test helper: simulate the user hovering the in-overlay corner sensor
-   * (i.e. re-entering the hot corner zone while the modal grab is held).
+   * (i.e. re-entering the hot corner rect while the modal grab is held).
    */
   simulateCornerReenter(): void {
     this.cornerReenterHandler?.();
@@ -128,57 +127,36 @@ export class FakeWindowMirror implements WindowMirrorPort {
   /** Toggle to make the next `mount()` report "no eligible window". */
   mountShouldFindNoWindow = false;
   /**
-   * Per-zone counts the next `mount()` will report. Defaults to a single
-   * clone in `bottomRight` (the production fallback zone), so existing
-   * tests that don't care about routing keep working unchanged. Tests
-   * that exercise multi-zone behavior overwrite this before firing the
-   * hot corner. The key set is open — tests are free to add zones the
-   * production `ZoneConfig` would not define.
+   * How many clones the next `mount()` will report. Defaults to a single
+   * clone so tests that don't care about the count keep working unchanged.
    */
-  nextMountByZone: Record<string, number> = { bottomRight: 1 };
+  nextMountCount = 1;
   /** Wall-clock epoch ms recorded on a simulated clone click. */
   lastActivatedAt: number | null = null;
-  /**
-   * Record of every `unmount()` call's `immediate` flag (defaulting to
-   * `false` when omitted). Tests assert against this to verify the
-   * controller routes `disable()` through the immediate path while
-   * user-driven closes go through the animated one.
-   */
-  unmountCalls: Array<{ immediate: boolean }> = [];
-  private byZone: WindowMirrorByZone = {};
+  private clonedCount = 0;
   private activatedHandler: (() => void) | null = null;
 
   mount(onActivated: () => void): boolean {
     this.mountCount++;
     if (this.mountShouldFindNoWindow) {
       this.activatedHandler = null;
-      this.byZone = {};
+      this.clonedCount = 0;
       return false;
     }
     this.activatedHandler = onActivated;
-    this.byZone = { ...this.nextMountByZone };
-    return sumByZone(this.byZone) > 0;
+    this.clonedCount = this.nextMountCount;
+    return this.clonedCount > 0;
   }
 
-  unmount(options?: { readonly immediate?: boolean }): void {
+  unmount(): void {
     this.unmountCount++;
-    this.unmountCalls.push({ immediate: options?.immediate ?? false });
     this.activatedHandler = null;
-    this.byZone = {};
-  }
-
-  /**
-   * Most recent `unmount()`'s `immediate` flag, or `undefined` if
-   * `unmount` has not been called. Sugar over `unmountCalls.at(-1)?.immediate`.
-   */
-  get lastUnmountImmediate(): boolean | undefined {
-    return this.unmountCalls.at(-1)?.immediate;
+    this.clonedCount = 0;
   }
 
   snapshot(): WindowMirrorSnapshot {
     return {
-      clonedCount: sumByZone(this.byZone),
-      byZone: { ...this.byZone },
+      clonedCount: this.clonedCount,
       lastActivatedAt: this.lastActivatedAt,
     };
   }
@@ -196,8 +174,4 @@ export class FakeWindowMirror implements WindowMirrorPort {
     this.lastActivatedAt = at;
     this.activatedHandler();
   }
-}
-
-function sumByZone(byZone: WindowMirrorByZone): number {
-  return Object.values(byZone).reduce((a, b) => a + b, 0);
 }

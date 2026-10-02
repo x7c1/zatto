@@ -18,7 +18,7 @@
  * `opening` and `closing` are transient. While in either, further `toggle()`
  * calls are ignored until the glue commits. This is the debounce guarantee:
  * a single physical hover produces exactly one open/close, even if the cursor
- * jitters inside the trigger zone.
+ * jitters inside the trigger area.
  *
  * On top of the state-based debounce, a separate cooldown window swallows
  * `toggle()` calls that arrive within `debounceMs` of the last accepted
