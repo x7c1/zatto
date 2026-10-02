@@ -27,6 +27,13 @@
  * chrome actor gets caught in that synthesis and spuriously fires
  * `enter-event`. We mirror Shell's own `Layout.HotCorner` guard: while the
  * Overview is active, ignore `enter-event` entirely.
+ *
+ * Stacking: chrome actors stack in the order they are added, and a dock
+ * that reaches the corner covers the trigger whenever it is added after
+ * it. Ubuntu Dock removes and re-adds itself each time its "fixed" mode is
+ * toggled, so the trigger is moved back to the top of the chrome every
+ * time an actor is added to `uiGroup`. In exchange, the dock's own 5x5 px
+ * at the corner no longer receive clicks.
  */
 
 import Clutter from 'gi://Clutter';
@@ -48,6 +55,7 @@ export class HotCornerTrigger implements HotCornerPort {
   private suppressed = false;
   private overviewShowingId: number | null = null;
   private overviewHiddenId: number | null = null;
+  private childAddedId: number | null = null;
 
   /** Register the single enter handler. Must be set before {@link enable}. */
   onEnter(handler: () => void): void {
@@ -85,6 +93,11 @@ export class HotCornerTrigger implements HotCornerPort {
 
     safeAddChrome(actor);
     this.actor = actor;
+    this.childAddedId = Main.layoutManager.uiGroup.connect('child-added', (_group, child) => {
+      if (child !== actor) {
+        this.raise(actor);
+      }
+    });
 
     this.overviewShowingId = Main.overview.connect('showing', () => {
       this.suppressed = true;
@@ -96,6 +109,10 @@ export class HotCornerTrigger implements HotCornerPort {
 
   /** Tear down the corner actor. Idempotent. */
   disable(): void {
+    if (this.childAddedId !== null) {
+      Main.layoutManager.uiGroup.disconnect(this.childAddedId);
+      this.childAddedId = null;
+    }
     if (this.overviewShowingId !== null) {
       Main.overview.disconnect(this.overviewShowingId);
       this.overviewShowingId = null;
@@ -114,6 +131,19 @@ export class HotCornerTrigger implements HotCornerPort {
       Main.layoutManager.removeChrome(this.actor);
       this.actor.destroy();
       this.actor = null;
+    }
+  }
+
+  /**
+   * Put the trigger back on top of the chrome, where `addChrome()` places
+   * a new actor: just below `top_window_group`, so popups still cover it.
+   */
+  private raise(actor: St.Widget): void {
+    const uiGroup = Main.layoutManager.uiGroup;
+    if (uiGroup.contains(global.top_window_group)) {
+      uiGroup.set_child_below_sibling(actor, global.top_window_group);
+    } else {
+      uiGroup.set_child_above_sibling(actor, null);
     }
   }
 }
