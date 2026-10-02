@@ -146,4 +146,28 @@ describe('Reloader.reload()', () => {
     expect(callKinds(extensionManager.calls)).toContain('createExtensionObject');
     expect(callKinds(extensionManager.calls)).toContain('enable');
   });
+  it("cleanupOldInstances leaves other extensions' reload copies alone", async () => {
+    const ownStale = `${BASE}-reload-1000`;
+    const otherReload = 'sutto@x7c1.github.io-reload-2000';
+    const lookalike = `${BASE}-reload-extra`;
+    const extensionManager = new FakeExtensionManager({
+      uuids: [BASE, ownStale, otherReload, lookalike],
+    });
+    const tempCopyPreparer = new FakeTempCopyPreparer();
+    const settingsPort = new FakeShellExtensionSettings({
+      enabled: [BASE, ownStale, otherReload],
+      disabled: [],
+    });
+
+    const reloader = makeReloader(extensionManager, tempCopyPreparer, settingsPort);
+    await reloader.reload();
+
+    const touched = extensionManager.calls
+      .filter((c) => c.kind === 'disable' || c.kind === 'unloadExtension')
+      .map((c) => c.uuid);
+    expect(touched).toContain(ownStale);
+    expect(touched).not.toContain(otherReload);
+    expect(touched).not.toContain(lookalike);
+    expect(settingsPort.getEnabled()).toContain(otherReload);
+  });
 });

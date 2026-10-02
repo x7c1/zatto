@@ -26,7 +26,7 @@ import type {
   ShellExtensionSettingsPort,
   TempCopyPreparer,
 } from './ports.js';
-import { pruneStaleReloadUuids } from './prune-stale-reloads.js';
+import { isReloadUuidOf, pruneStaleReloadUuids } from './prune-stale-reloads.js';
 
 /**
  * Type guard to safely extract error message from unknown error
@@ -172,7 +172,9 @@ export class Reloader {
   private cleanupOldInstances(): void {
     const uuids = this.extensionManager.getUuids();
     for (const uuid of uuids) {
-      if (uuid.includes('-reload-') && uuid !== this.currentUuid) {
+      // Only this extension's own copies: other extensions may run their
+      // own reload copies, and disabling those would take them down.
+      if (isReloadUuidOf(this.originalUuid, uuid) && uuid !== this.currentUuid) {
         try {
           const disableSuccess = this.extensionManager.disableExtension(uuid);
           if (!disableSuccess) {
