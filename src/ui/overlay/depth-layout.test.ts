@@ -35,14 +35,18 @@ describe('computeDepthLayout', () => {
     expect(layout.container).toEqual({ scale: 1, translationX: 0, translationY: 0 });
   });
 
-  it('keeps the topmost (last) clone in place and moves each deeper one depthStepPx further up-left', () => {
+  it('offsets each deeper clone depthStepPx further up-left and centres the stack on the windows', () => {
     const frames = [
       frame(300, 300, 400, 300),
       frame(300, 300, 400, 300),
       frame(300, 300, 400, 300),
     ];
     const layout = computeDepthLayout(frames, area, tuning);
-    expect(layout.container).toEqual({ scale: 1, translationX: 0, translationY: 0 });
+    // The stack spans 2·step up-left of the windows, so the container moves
+    // it back by half of that to keep its centre on theirs.
+    expect(layout.container.scale).toBe(1);
+    expect(layout.container.translationX).toBeCloseTo(step);
+    expect(layout.container.translationY).toBeCloseTo(step);
     expect(layout.clones[2].offsetX).toBe(0);
     expect(layout.clones[2].offsetY).toBe(0);
     expect(layout.clones[1].offsetX).toBeCloseTo(-step);
@@ -58,18 +62,21 @@ describe('computeDepthLayout', () => {
     expect(layout.clones[0].offsetY).toBeCloseTo(step);
   });
 
-  it('shifts the plane down-right just enough when deep clones would spill off the top-left', () => {
+  it('scales a stack of maximised windows down and centres it in the area', () => {
     const frames = Array.from({ length: 3 }, () => frame(0, 0, 1920, 1080));
     const layout = computeDepthLayout(frames, area, tuning);
     // Extent is 1920 + 2·step by 1080 + 2·step, so it no longer fits at
     // scale 1; the height is the tighter of the two.
-    expect(layout.container.scale).toBeCloseTo(1080 / (1080 + 2 * step));
+    const scale = 1080 / (1080 + 2 * step);
+    expect(layout.container.scale).toBeCloseTo(scale);
     const [deepestLeft, deepestTop] = screenTopLeft(layout, frames[0], 0);
-    expect(deepestLeft).toBeCloseTo(0);
-    expect(deepestTop).toBeCloseTo(0);
     const [topLeft, topTop] = screenTopLeft(layout, frames[2], 2);
-    expect(topLeft + 1920 * layout.container.scale).toBeLessThanOrEqual(1920);
-    expect(topTop + 1080 * layout.container.scale).toBeCloseTo(1080);
+    const right = topLeft + 1920 * scale;
+    // Equal margins left and right, flush top and bottom.
+    expect(deepestLeft).toBeGreaterThan(0);
+    expect(deepestLeft).toBeCloseTo(1920 - right);
+    expect(deepestTop).toBeCloseTo(0);
+    expect(topTop + 1080 * scale).toBeCloseTo(1080);
   });
 
   it('only translates when the clones fit the area after the offsets', () => {

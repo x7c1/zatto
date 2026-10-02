@@ -1,13 +1,13 @@
 /**
- * Overlay actor: full-monitor dimmer that hosts live window clones.
+ * Overlay actor: work-area dimmer that hosts live window clones.
  *
- * The dimmer itself is reactive so it absorbs background clicks, and it
- * is the modal grab actor; it covers the whole primary monitor so it also
- * sees the pointer in the re-entry corner. It stays transparent, so the
- * top bar and the dock show through it as they do on the desktop. The dim
- * colour lives on a separate shade child below the clone container, and
- * both are confined to the primary monitor's work area (see
- * `work-area.ts`), the space between the top bar and the dock. Fading
+ * The dimmer itself is reactive so it absorbs background clicks. It covers
+ * only the primary monitor's work area (see `work-area.ts`), the space
+ * between the top bar and the dock: the modal grab is taken on the stage
+ * (see `gnome-modal-grab.ts`), so the top bar and the dock keep receiving
+ * input, and a monitor-wide dimmer added as chrome after them would paint
+ * over them and intercept their clicks. The dim colour lives on a separate
+ * shade child below the clone container, both at the dimmer's origin. Fading
  * the shade in on `show()` and out on `hide()` does not fade the clones
  * with it (they ease on their own, see `gnome-window-mirror.ts`). The
  * "what does the user see" content is supplied by the
@@ -25,7 +25,6 @@ import { shouldAnimate } from '../../libs/shell/animations.js';
 import { safeAddChrome } from '../../libs/shell/safe-add-chrome.js';
 import { primaryWorkArea } from '../../libs/shell/work-area.js';
 import { DEPTH_VIEW_TUNING, type Rect } from './depth-layout.js';
-import { HOT_CORNER_SIZE } from './hot-corner-trigger.js';
 import type { OverlayActorPort } from './ports.js';
 
 const EASE_MODE = Clutter.AnimationMode.EASE_OUT_QUAD;
@@ -36,17 +35,8 @@ export class OverlayActor implements OverlayActorPort {
   private dimmer: St.Widget | null = null;
   private shade: St.Widget | null = null;
   private cloneContainer: St.Widget | null = null;
-  private dimmerMotionId: number | null = null;
-  /** Primary monitor geometry the dimmer was last fitted to. */
-  private monitorRect: Rect = { x: 0, y: 0, width: 0, height: 0 };
-  private cornerLatched = false;
-  private cornerReenterHandler: (() => void) | null = null;
   private mounted = false;
   private visible = false;
-
-  onCornerReenter(handler: () => void): void {
-    this.cornerReenterHandler = handler;
-  }
 
   /** Mount the dimmer to the Shell chrome (hidden until `show()` is called). */
   mount(): void {
@@ -54,9 +44,8 @@ export class OverlayActor implements OverlayActorPort {
       return;
     }
 
-    const monitor = Main.layoutManager.primaryMonitor;
     const workArea = primaryWorkArea();
-    if (!monitor || workArea === null) {
+    if (workArea === null) {
       // Cannot meaningfully position the overlay without a primary monitor;
       // bail without throwing — `show()` will become a no-op until next mount.
       console.warn('[Zatto] OverlayActor.mount: no primary monitor available');
@@ -66,8 +55,8 @@ export class OverlayActor implements OverlayActorPort {
     const dimmer = new St.Widget({
       reactive: true,
       visible: false,
-      // FixedLayout lets the shade and the clone container sit at the work
-      // area's offset inside the dimmer. BinLayout would force-center every child, breaking
+      // FixedLayout keeps the shade and the clone container at the
+      // dimmer's origin. BinLayout would force-center every child, breaking
       // in-place positioning.
       layout_manager: new Clutter.FixedLayout(),
     });
@@ -95,68 +84,32 @@ export class OverlayActor implements OverlayActorPort {
     cloneContainer.add_style_class_name('zatto-overlay-clones');
     dimmer.add_child(cloneContainer);
 
-    // Re-entry detection: the chrome-level `HotCornerTrigger` is a sibling of
-    // the dimmer, not a descendant, so it stops receiving pointer events the
-    // moment `pushModal(dimmer)` routes everything to the grab actor. A child
-    // sensor with `enter-event` doesn't work either — under the modal grab,
-    // Clutter binds pointer focus to the grab actor and does not re-evaluate
-    // the hit-actor inside the grab region except when an implicit pointer
-    // grab (e.g. mouse-button-hold) ends, so plain hovers never fire child
-    // `enter-event`s. The grab actor itself, however, receives `motion-event`
-    // reliably; combine a coordinate check with an edge-detection latch so
-    // the handler fires exactly once per physical corner re-entry.
-    this.dimmerMotionId = dimmer.connect('motion-event', (_actor, event) => {
-      const [stageX, stageY] = event.get_coords();
-      const { x, y, height } = this.monitorRect;
-      const localX = stageX - x;
-      const localY = stageY - y;
-      const insideCorner =
-        localX >= 0 &&
-        localX < HOT_CORNER_SIZE &&
-        localY >= height - HOT_CORNER_SIZE &&
-        localY < height;
-      if (insideCorner) {
-        if (!this.cornerLatched) {
-          this.cornerLatched = true;
-          this.cornerReenterHandler?.();
-        }
-      } else {
-        this.cornerLatched = false;
-      }
-      return Clutter.EVENT_PROPAGATE;
-    });
-
     safeAddChrome(dimmer);
     this.dimmer = dimmer;
     this.shade = shade;
     this.cloneContainer = cloneContainer;
-    this.fitGeometry(monitor, workArea);
+    this.fitGeometry(workArea);
     this.mounted = true;
   }
 
   /**
-   * Place the dimmer on the primary monitor and the shade and the clone
-   * container on its work area, relative to the dimmer. The work area is
+   * Place the dimmer on the primary monitor's work area and the shade and
+   * the clone container at its origin, covering it. The work area is
    * re-read on every `show()` rather than kept from `mount()`: it changes
    * after the extension is enabled whenever the dock or the panel changes
    * the space it reserves (e.g. a dock that sets its strut late at login,
    * or auto-hide toggled), and the window mirror reads it fresh on every
    * open, so a stale container would put the clones off their windows.
    */
-  private fitGeometry(monitor: Rect, workArea: Rect): void {
+  private fitGeometry(workArea: Rect): void {
     const { dimmer, shade, cloneContainer } = this;
     if (dimmer === null || shade === null || cloneContainer === null) {
       return;
     }
-    this.monitorRect = { x: monitor.x, y: monitor.y, width: monitor.width, height: monitor.height };
-    dimmer.set_position(monitor.x, monitor.y);
-    dimmer.set_size(monitor.width, monitor.height);
-    // The work area relative to the monitor: where the shade and the
-    // clones go, leaving the top bar and the dock undimmed and uncovered.
-    const areaX = workArea.x - monitor.x;
-    const areaY = workArea.y - monitor.y;
+    dimmer.set_position(workArea.x, workArea.y);
+    dimmer.set_size(workArea.width, workArea.height);
     for (const child of [shade, cloneContainer]) {
-      child.set_position(areaX, areaY);
+      child.set_position(0, 0);
       child.set_size(workArea.width, workArea.height);
     }
   }
@@ -169,10 +122,9 @@ export class OverlayActor implements OverlayActorPort {
     // Cancel a fade-out in flight so its completion does not hide the
     // dimmer we are showing again; the fade-in starts from where it was.
     shade.remove_all_transitions();
-    const monitor = Main.layoutManager.primaryMonitor;
     const workArea = primaryWorkArea();
-    if (monitor && workArea !== null) {
-      this.fitGeometry(monitor, workArea);
+    if (workArea !== null) {
+      this.fitGeometry(workArea);
     }
     dimmer.reactive = true;
     dimmer.show();
@@ -190,7 +142,6 @@ export class OverlayActor implements OverlayActorPort {
       return;
     }
     this.visible = false;
-    this.cornerLatched = false;
     shade.remove_all_transitions();
     // The dimmer stays on stage while the shade fades and the clones it
     // hosts ease back; stop it from swallowing clicks meanwhile.
@@ -213,8 +164,11 @@ export class OverlayActor implements OverlayActorPort {
     return this.visible;
   }
 
-  /** The reactive actor used as the modal grab target. */
-  getGrabActor(): Clutter.Actor | null {
+  /**
+   * The root actor of the overlay. The modal grab uses it to tell presses
+   * inside the overlay (on the shade or a clone) from presses outside it.
+   */
+  getActor(): Clutter.Actor | null {
     return this.dimmer;
   }
 
@@ -230,10 +184,6 @@ export class OverlayActor implements OverlayActorPort {
 
   /** Unmount and destroy. Idempotent. */
   destroy(): void {
-    if (this.dimmer !== null && this.dimmerMotionId !== null) {
-      this.dimmer.disconnect(this.dimmerMotionId);
-      this.dimmerMotionId = null;
-    }
     // A pending fade's completion must not touch a destroyed dimmer.
     this.shade?.remove_all_transitions();
     this.shade = null;
@@ -248,6 +198,5 @@ export class OverlayActor implements OverlayActorPort {
     this.cloneContainer = null;
     this.mounted = false;
     this.visible = false;
-    this.cornerLatched = false;
   }
 }
