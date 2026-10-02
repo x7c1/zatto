@@ -2,8 +2,12 @@
  * Overlay actor: full-monitor dimmer that hosts live window clones.
  *
  * The dimmer itself is reactive so it absorbs background clicks, and it
- * is the modal grab actor. It stays transparent: the dim colour lives on a
- * separate full-monitor shade child below the clone container, so fading
+ * is the modal grab actor; it covers the whole primary monitor so it also
+ * sees the pointer in the re-entry corner. It stays transparent, so the
+ * top bar and the dock show through it as they do on the desktop. The dim
+ * colour lives on a separate shade child below the clone container, and
+ * both are confined to the primary monitor's work area (see
+ * `work-area.ts`), the space between the top bar and the dock. Fading
  * the shade in on `show()` and out on `hide()` does not fade the clones
  * with it (they ease on their own, see `gnome-window-mirror.ts`). The
  * "what does the user see" content is supplied by the
@@ -11,7 +15,7 @@
  * `Clutter.Clone` actors as children of the dedicated clone container
  * returned by {@link OverlayActor.getCloneContainer}. The clone container
  * uses `Clutter.FixedLayout` so the window mirror can position each clone
- * by absolute monitor-relative coordinates (see `gnome-window-mirror.ts`).
+ * by absolute work-area-relative coordinates (see `gnome-window-mirror.ts`).
  */
 
 import Clutter from 'gi://Clutter';
@@ -19,7 +23,8 @@ import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { shouldAnimate } from '../../libs/shell/animations.js';
 import { safeAddChrome } from '../../libs/shell/safe-add-chrome.js';
-import { DEPTH_VIEW_TUNING } from './depth-layout.js';
+import { primaryWorkArea } from '../../libs/shell/work-area.js';
+import { DEPTH_VIEW_TUNING, type Rect } from './depth-layout.js';
 import { HOT_CORNER_SIZE } from './hot-corner-trigger.js';
 import type { OverlayActorPort } from './ports.js';
 
@@ -32,6 +37,8 @@ export class OverlayActor implements OverlayActorPort {
   private shade: St.Widget | null = null;
   private cloneContainer: St.Widget | null = null;
   private dimmerMotionId: number | null = null;
+  /** Primary monitor geometry the dimmer was last fitted to. */
+  private monitorRect: Rect = { x: 0, y: 0, width: 0, height: 0 };
   private cornerLatched = false;
   private cornerReenterHandler: (() => void) | null = null;
   private mounted = false;
@@ -48,7 +55,8 @@ export class OverlayActor implements OverlayActorPort {
     }
 
     const monitor = Main.layoutManager.primaryMonitor;
-    if (!monitor) {
+    const workArea = primaryWorkArea();
+    if (!monitor || workArea === null) {
       // Cannot meaningfully position the overlay without a primary monitor;
       // bail without throwing — `show()` will become a no-op until next mount.
       console.warn('[Zatto] OverlayActor.mount: no primary monitor available');
@@ -58,13 +66,8 @@ export class OverlayActor implements OverlayActorPort {
     const dimmer = new St.Widget({
       reactive: true,
       visible: false,
-      x: monitor.x,
-      y: monitor.y,
-      width: monitor.width,
-      height: monitor.height,
-      // FixedLayout lets the clone container (and the window mirror that
-      // populates it) place children by absolute monitor-relative
-      // coordinates. BinLayout would force-center every child, breaking
+      // FixedLayout lets the shade and the clone container sit at the work
+      // area's offset inside the dimmer. BinLayout would force-center every child, breaking
       // in-place positioning.
       layout_manager: new Clutter.FixedLayout(),
     });
@@ -73,10 +76,6 @@ export class OverlayActor implements OverlayActorPort {
     // The dim colour, below the clones. Its opacity is what fades.
     const shade = new St.Widget({
       style: SHADE_STYLE,
-      x: 0,
-      y: 0,
-      width: monitor.width,
-      height: monitor.height,
       reactive: false,
       opacity: 0,
     });
@@ -87,11 +86,9 @@ export class OverlayActor implements OverlayActorPort {
     // container (rather than attaching them directly to the dimmer) keeps
     // the dimmer free to host other chrome later (e.g. outlines or
     // labels) without those decorations sharing the clones' input routing.
+    // It does not clip: a clone whose window extends outside the work
+    // area starts outside the container and eases in.
     const cloneContainer = new St.Widget({
-      x: 0,
-      y: 0,
-      width: monitor.width,
-      height: monitor.height,
       reactive: false,
       layout_manager: new Clutter.FixedLayout(),
     });
@@ -110,13 +107,14 @@ export class OverlayActor implements OverlayActorPort {
     // the handler fires exactly once per physical corner re-entry.
     this.dimmerMotionId = dimmer.connect('motion-event', (_actor, event) => {
       const [stageX, stageY] = event.get_coords();
-      const localX = stageX - monitor.x;
-      const localY = stageY - monitor.y;
+      const { x, y, height } = this.monitorRect;
+      const localX = stageX - x;
+      const localY = stageY - y;
       const insideCorner =
         localX >= 0 &&
         localX < HOT_CORNER_SIZE &&
-        localY >= monitor.height - HOT_CORNER_SIZE &&
-        localY < monitor.height;
+        localY >= height - HOT_CORNER_SIZE &&
+        localY < height;
       if (insideCorner) {
         if (!this.cornerLatched) {
           this.cornerLatched = true;
@@ -132,7 +130,35 @@ export class OverlayActor implements OverlayActorPort {
     this.dimmer = dimmer;
     this.shade = shade;
     this.cloneContainer = cloneContainer;
+    this.fitGeometry(monitor, workArea);
     this.mounted = true;
+  }
+
+  /**
+   * Place the dimmer on the primary monitor and the shade and the clone
+   * container on its work area, relative to the dimmer. The work area is
+   * re-read on every `show()` rather than kept from `mount()`: it changes
+   * after the extension is enabled whenever the dock or the panel changes
+   * the space it reserves (e.g. a dock that sets its strut late at login,
+   * or auto-hide toggled), and the window mirror reads it fresh on every
+   * open, so a stale container would put the clones off their windows.
+   */
+  private fitGeometry(monitor: Rect, workArea: Rect): void {
+    const { dimmer, shade, cloneContainer } = this;
+    if (dimmer === null || shade === null || cloneContainer === null) {
+      return;
+    }
+    this.monitorRect = { x: monitor.x, y: monitor.y, width: monitor.width, height: monitor.height };
+    dimmer.set_position(monitor.x, monitor.y);
+    dimmer.set_size(monitor.width, monitor.height);
+    // The work area relative to the monitor: where the shade and the
+    // clones go, leaving the top bar and the dock undimmed and uncovered.
+    const areaX = workArea.x - monitor.x;
+    const areaY = workArea.y - monitor.y;
+    for (const child of [shade, cloneContainer]) {
+      child.set_position(areaX, areaY);
+      child.set_size(workArea.width, workArea.height);
+    }
   }
 
   show(): void {
@@ -143,6 +169,11 @@ export class OverlayActor implements OverlayActorPort {
     // Cancel a fade-out in flight so its completion does not hide the
     // dimmer we are showing again; the fade-in starts from where it was.
     shade.remove_all_transitions();
+    const monitor = Main.layoutManager.primaryMonitor;
+    const workArea = primaryWorkArea();
+    if (monitor && workArea !== null) {
+      this.fitGeometry(monitor, workArea);
+    }
     dimmer.reactive = true;
     dimmer.show();
     if (shouldAnimate()) {
@@ -190,8 +221,8 @@ export class OverlayActor implements OverlayActorPort {
   /**
    * The dedicated child container clones are parented to. It uses
    * `Clutter.FixedLayout` so the {@link WindowMirrorPort} production
-   * implementation can position each clone at an absolute monitor-relative
-   * coordinate (see `gnome-window-mirror.ts`).
+   * implementation can position each clone at an absolute
+   * work-area-relative coordinate (see `gnome-window-mirror.ts`).
    */
   getCloneContainer(): St.Widget | null {
     return this.cloneContainer;

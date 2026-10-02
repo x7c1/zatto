@@ -4,14 +4,15 @@
  * Enumerates every eligible top-level window and mirrors each one into
  * the overlay as a reactive clone. Each clone starts exactly on its
  * window actor's on-screen rect (the buffer rect, relative to the primary
- * monitor), fully opaque, so it covers the real window the controller
- * hides right after mounting. It then eases into the depth view: the
- * stacking order is rendered as depth under a parallel oblique projection,
- * each clone offset along the depth axis by how many windows sit above it
- * and drawn translucent, and the whole set scaled down and shifted only
- * if needed to stay on the monitor (see `depth-layout.ts` for the geometry
- * and tuning). Closing eases everything back onto the windows' rects, so the
- * real windows can reappear under clones that cover them exactly.
+ * monitor's work area), fully opaque, so it covers the real window the
+ * controller hides right after mounting. It then eases into the depth
+ * view: the stacking order is rendered as depth under a parallel oblique
+ * projection, each clone offset along the depth axis by how many windows
+ * sit above it and drawn translucent, and the whole set scaled down and
+ * shifted only if needed to stay inside the work area, between the top
+ * bar and the dock (see `depth-layout.ts` for the geometry and tuning).
+ * Closing eases everything back onto the windows' rects, so the real
+ * windows can reappear under clones that cover them exactly.
  * Clicking a clone activates its window.
  *
  * Three Mutter / Clutter API points this mirror sits on top of:
@@ -30,9 +31,9 @@
 import Clutter from 'gi://Clutter';
 import Meta from 'gi://Meta';
 import type St from 'gi://St';
-import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import type { ActorEaseParams } from '../../libs/shell/actor-ease.js';
 import { shouldAnimate } from '../../libs/shell/animations.js';
+import { primaryWorkArea } from '../../libs/shell/work-area.js';
 import { computeDepthLayout, DEPTH_VIEW_TUNING, type Rect } from './depth-layout.js';
 import type { UnmountOptions, WindowMirrorPort, WindowMirrorSnapshot } from './ports.js';
 
@@ -42,7 +43,7 @@ const EASE_MODE = Clutter.AnimationMode.EASE_OUT_QUAD;
 interface MountedClone {
   readonly clone: Clutter.Clone;
   readonly win: Meta.Window;
-  /** Monitor-relative buffer rect at mount time; the close target fallback. */
+  /** Work-area-relative buffer rect at mount time; the close target fallback. */
   readonly rect: Rect;
   readonly clickHandlerId: number;
 }
@@ -50,8 +51,8 @@ interface MountedClone {
 export class GnomeWindowMirror implements WindowMirrorPort {
   private clones: MountedClone[] = [];
   private lastActivatedAt: number | null = null;
-  /** Origin of the monitor the clones were laid out on. */
-  private monitorOrigin = { x: 0, y: 0 };
+  /** Origin of the work area the clones were laid out in. */
+  private workAreaOrigin = { x: 0, y: 0 };
   /** `onDone` callbacks of animated closes whose ease has not landed yet. */
   private pendingDone: (() => void)[] = [];
   /**
@@ -85,12 +86,12 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       return false;
     }
 
-    const monitor = Main.layoutManager.primaryMonitor;
-    if (!monitor) {
+    const workArea = primaryWorkArea();
+    if (workArea === null) {
       console.warn('[Zatto] GnomeWindowMirror.mount: no primary monitor available');
       return false;
     }
-    this.monitorOrigin = { x: monitor.x, y: monitor.y };
+    this.workAreaOrigin = { x: workArea.x, y: workArea.y };
 
     // Bottom-to-top, as `global.get_window_actors()` returns them. Clutter
     // paints children in insertion order and does not depth-sort, so the
@@ -100,7 +101,9 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     // its own size, and the window actor spans the buffer rect, which
     // includes client-side shadows and invisible borders. Sizing a clone
     // to the frame rect would squash it and make the swap with the real
-    // window visible.
+    // window visible. A window may extend outside the work area (e.g.
+    // under an auto-hidden dock); its clone then starts outside the
+    // container, which does not clip, and eases in.
     const entries = this.collectEligible()
       .map(({ actor, win }) => ({
         actor,
@@ -113,7 +116,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       .filter(({ frame, rect }) => isNonEmpty(frame) && isNonEmpty(rect));
     const layout = computeDepthLayout(
       entries.map(({ frame }) => frame),
-      { width: monitor.width, height: monitor.height },
+      { width: workArea.width, height: workArea.height },
       DEPTH_VIEW_TUNING
     );
     const animate = shouldAnimate();
@@ -162,7 +165,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
 
     // Fit once, on the container, so every window keeps its x, y
     // relationship: the scale and shift are identity unless the offset
-    // clones would leave the monitor.
+    // clones would leave the work area.
     const { scale, translationX, translationY } = layout.container;
     if (animate) {
       container.ease({
@@ -263,23 +266,23 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     }
   }
 
-  /** Monitor-relative frame rect of `win`: the visible window. */
+  /** Work-area-relative frame rect of `win`: the visible window. */
   private frameRectOf(win: Meta.Window): Rect {
-    return this.toMonitorRect(win.get_frame_rect());
+    return this.toWorkAreaRect(win.get_frame_rect());
   }
 
   /**
-   * Monitor-relative buffer rect of `win`: the rect its window actor
+   * Work-area-relative buffer rect of `win`: the rect its window actor
    * spans, shadows and invisible borders included.
    */
   private bufferRectOf(win: Meta.Window): Rect {
-    return this.toMonitorRect(win.get_buffer_rect());
+    return this.toWorkAreaRect(win.get_buffer_rect());
   }
 
-  private toMonitorRect(rect: Rect): Rect {
+  private toWorkAreaRect(rect: Rect): Rect {
     return {
-      x: rect.x - this.monitorOrigin.x,
-      y: rect.y - this.monitorOrigin.y,
+      x: rect.x - this.workAreaOrigin.x,
+      y: rect.y - this.workAreaOrigin.y,
       width: rect.width,
       height: rect.height,
     };

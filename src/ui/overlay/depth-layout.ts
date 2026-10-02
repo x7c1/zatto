@@ -19,9 +19,9 @@
  * z = 0 plane.
  *
  * Fit: the bounding box of all offset clones is scaled down uniformly
- * if it is larger than the monitor, then translated as little as
- * possible so it lies inside the monitor. The scale is centred on the
- * monitor. Nothing is enlarged.
+ * if it is larger than the area the clones must fit into (the work
+ * area), then translated as little as possible so it lies inside that
+ * area. The scale is centred on the area. Nothing is enlarged.
  *
  * Opacity model: constant. Every clone gets the same opacity. Each
  * translucent layer in front of a window already attenuates it, so
@@ -86,9 +86,9 @@ export interface CloneDepth {
 export interface ContainerTransform {
   /** Uniform scale of the clone container, 1 unless the clones do not fit. */
   readonly scale: number;
-  /** Horizontal translation of the clone container, in monitor px. */
+  /** Horizontal translation of the clone container, in area px. */
   readonly translationX: number;
-  /** Vertical translation of the clone container, in monitor px. */
+  /** Vertical translation of the clone container, in area px. */
   readonly translationY: number;
 }
 
@@ -115,14 +115,15 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * Compute the depth view for `frames`, the monitor-relative frame rects
- * of the clones in bottom-to-top stacking order (the order
+ * Compute the depth view for `frames`, the frame rects of the clones
+ * relative to `area` (the area they must fit into, i.e. the work area),
+ * in bottom-to-top stacking order (the order
  * `global.get_window_actors()` returns). Entry `i` of `clones` belongs to
  * frame `i`; the last entry is the topmost window.
  */
 export function computeDepthLayout(
   frames: readonly Rect[],
-  monitor: Size,
+  area: Size,
   tuning: DepthViewTuning
 ): DepthViewLayout {
   const opacity = Math.round(tuning.opacity * 255);
@@ -160,14 +161,14 @@ export function computeDepthLayout(
     maxY = Math.max(maxY, top + frame.height);
   });
 
-  const scale = Math.min(1, monitor.width / (maxX - minX), monitor.height / (maxY - minY));
+  const scale = Math.min(1, area.width / (maxX - minX), area.height / (maxY - minY));
 
-  // Preferred placement: scale around the monitor centre, then move only
-  // as far as needed to bring the bounding box on screen.
-  const preferredX = (monitor.width / 2) * (1 - scale);
-  const preferredY = (monitor.height / 2) * (1 - scale);
-  const translationX = clamp(preferredX, -minX * scale, monitor.width - maxX * scale);
-  const translationY = clamp(preferredY, -minY * scale, monitor.height - maxY * scale);
+  // Preferred placement: scale around the area centre, then move only
+  // as far as needed to bring the bounding box inside the area.
+  const preferredX = (area.width / 2) * (1 - scale);
+  const preferredY = (area.height / 2) * (1 - scale);
+  const translationX = clamp(preferredX, -minX * scale, area.width - maxX * scale);
+  const translationY = clamp(preferredY, -minY * scale, area.height - maxY * scale);
 
   return {
     clones,
