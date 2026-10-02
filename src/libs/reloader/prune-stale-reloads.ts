@@ -30,12 +30,26 @@ function pruneList(list: string[], pattern: RegExp, preserveUuid: string): strin
  * Writes back to GSettings only when the list actually changes, so a
  * steady-state reload does not generate spurious DConf traffic.
  */
+/**
+ * Whether `uuid` is a reload copy of the extension `baseUuid`, i.e.
+ * exactly `<baseUuid>-reload-<digits>`. Other extensions may use the same
+ * reload scheme, so matching on `-reload-` alone would also catch their
+ * copies.
+ */
+export function isReloadUuidOf(baseUuid: string, uuid: string): boolean {
+  return reloadPattern(baseUuid).test(uuid);
+}
+
+function reloadPattern(baseUuid: string): RegExp {
+  return new RegExp(`^${escapeRegExp(baseUuid)}-reload-\\d+$`);
+}
+
 export function pruneStaleReloadUuids(
   port: ShellExtensionSettingsPort,
   baseUuid: string,
   currentReloadUuid: string
 ): void {
-  const pattern = new RegExp(`^${escapeRegExp(baseUuid)}-reload-\\d+$`);
+  const pattern = reloadPattern(baseUuid);
 
   const enabled = port.getEnabled();
   const prunedEnabled = pruneList(enabled, pattern, currentReloadUuid);
