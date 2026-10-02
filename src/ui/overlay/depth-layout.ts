@@ -20,8 +20,11 @@
  *
  * Fit: the bounding box of all offset clones is scaled down uniformly
  * if it is larger than the area the clones must fit into (the work
- * area), then translated as little as possible so it lies inside that
- * area. The scale is centred on the area. Nothing is enlarged.
+ * area). Nothing is enlarged. It is then placed so that its centre
+ * lands on the centre of the windows' own bounding box, and moved only
+ * as far as needed to stay inside the area. The depth offsets all point
+ * the same way, so without this the stack would drift towards the far
+ * side; with it, a stack of maximised windows ends up centred.
  *
  * Opacity model: constant. Every clone gets the same opacity. Each
  * translucent layer in front of a window already attenuates it, so
@@ -110,6 +113,22 @@ function normalizeZero(value: number): number {
   return value === 0 ? 0 : value;
 }
 
+interface Bounds {
+  readonly minX: number;
+  readonly maxX: number;
+  readonly minY: number;
+  readonly maxY: number;
+}
+
+function boundsOf(rects: readonly Rect[]): Bounds {
+  return {
+    minX: Math.min(...rects.map((r) => r.x)),
+    maxX: Math.max(...rects.map((r) => r.x + r.width)),
+    minY: Math.min(...rects.map((r) => r.y)),
+    maxY: Math.max(...rects.map((r) => r.y + r.height)),
+  };
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
@@ -146,27 +165,23 @@ export function computeDepthLayout(
     return { clones, container: IDENTITY };
   }
 
-  // Bounding box of the offset clones before the fit scale and the
-  // translation.
-  let minX = Number.POSITIVE_INFINITY;
-  let maxX = Number.NEGATIVE_INFINITY;
-  let minY = Number.POSITIVE_INFINITY;
-  let maxY = Number.NEGATIVE_INFINITY;
-  frames.forEach((frame, i) => {
-    const left = frame.x + clones[i].offsetX;
-    const top = frame.y + clones[i].offsetY;
-    minX = Math.min(minX, left);
-    maxX = Math.max(maxX, left + frame.width);
-    minY = Math.min(minY, top);
-    maxY = Math.max(maxY, top + frame.height);
-  });
+  // Bounding boxes of the windows as they are and of the offset clones,
+  // before the fit scale and the translation.
+  const windows = boundsOf(frames.map((frame) => frame));
+  const { minX, maxX, minY, maxY } = boundsOf(
+    frames.map((frame, i) => ({
+      ...frame,
+      x: frame.x + clones[i].offsetX,
+      y: frame.y + clones[i].offsetY,
+    }))
+  );
 
   const scale = Math.min(1, area.width / (maxX - minX), area.height / (maxY - minY));
 
-  // Preferred placement: scale around the area centre, then move only
-  // as far as needed to bring the bounding box inside the area.
-  const preferredX = (area.width / 2) * (1 - scale);
-  const preferredY = (area.height / 2) * (1 - scale);
+  // Preferred placement: the offset stack's centre on the windows' own
+  // centre, then move only as far as needed to stay inside the area.
+  const preferredX = (windows.minX + windows.maxX) / 2 - ((minX + maxX) / 2) * scale;
+  const preferredY = (windows.minY + windows.maxY) / 2 - ((minY + maxY) / 2) * scale;
   const translationX = clamp(preferredX, -minX * scale, area.width - maxX * scale);
   const translationY = clamp(preferredY, -minY * scale, area.height - maxY * scale);
 
