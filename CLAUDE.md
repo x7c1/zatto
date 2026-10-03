@@ -43,4 +43,4 @@ gdbus call --session \
   --method io.github.x7c1.Zatto.Inspect.GetState
 ```
 
-Returns a JSON snapshot (`{ overlay: { state, visible }, hotCorner: { lastEnterAt }, windowMirror: { clonedCount, lastActivatedAt }, realWindows: { hidden, lastRestoredAt } }`). Intended for ad-hoc inspection during `npm run dev` and, later, for assertions from a nested-shell e2e harness.
+Returns a JSON snapshot (`{ overlay: { state, visible }, hotCorner: { lastEnterAt }, windowMirror: { clonedCount, lastActivatedAt, lastCycledAt }, realWindows: { hidden, lastRestoredAt } }`). Intended for ad-hoc inspection during `npm run dev` and, later, for assertions from a nested-shell e2e harness.

@@ -15,6 +15,19 @@
  * windows can reappear under clones that cover them exactly.
  * Clicking a clone activates its window.
  *
+ * Cycling: while the depth view is up, {@link GnomeWindowMirror.cycleAt}
+ * moves a single focus through the windows drawn under the cursor. The
+ * layout computed at mount stays as it is for as long as the overlay is
+ * open: no clone moves or resizes and the container transform does not
+ * change. The focused clone eases to full opacity and is raised to the
+ * top of the container's children (Clutter paints in child order, so an
+ * opaque clone would otherwise still be covered by the translucent ones
+ * in front of it); the previously focused clone eases back to the layout
+ * opacity and returns to its mount position among the children. The real
+ * stacking order is never touched: closing first puts the children back
+ * in mount order (with an activated clone on top), so the real windows
+ * reappear under clones stacked the way the windows are.
+ *
  * Three Mutter / Clutter API points this mirror sits on top of:
  *
  *   1. `global.get_window_actors()` — enumerate other apps' window actors.
@@ -34,7 +47,13 @@ import type St from 'gi://St';
 import type { ActorEaseParams } from '../../libs/shell/actor-ease.js';
 import { shouldAnimate } from '../../libs/shell/animations.js';
 import { primaryWorkArea } from '../../libs/shell/work-area.js';
-import { computeDepthLayout, DEPTH_VIEW_TUNING, type Rect } from './depth-layout.js';
+import { type CycleDirection, cycleFocus, type Point, windowsUnder } from './depth-cycle.js';
+import {
+  computeDepthLayout,
+  DEPTH_VIEW_TUNING,
+  type DepthViewLayout,
+  type Rect,
+} from './depth-layout.js';
 import type { UnmountOptions, WindowMirrorPort, WindowMirrorSnapshot } from './ports.js';
 
 const EASE_MODE = Clutter.AnimationMode.EASE_OUT_QUAD;
@@ -45,14 +64,29 @@ interface MountedClone {
   readonly win: Meta.Window;
   /** Work-area-relative buffer rect at mount time; the close target fallback. */
   readonly rect: Rect;
+  /** Work-area-relative frame rect at mount time; what the layout and hit-testing use. */
+  readonly frame: Rect;
   readonly clickHandlerId: number;
 }
 
 export class GnomeWindowMirror implements WindowMirrorPort {
   private clones: MountedClone[] = [];
   private lastActivatedAt: number | null = null;
+  private lastCycledAt: number | null = null;
   /** Origin of the work area the clones were laid out in. */
   private workAreaOrigin = { x: 0, y: 0 };
+  /**
+   * The layout computed at mount, for the clones in mount (bottom-to-top)
+   * order. It does not change while the overlay is open; cycling
+   * hit-tests against it.
+   */
+  private layout: DepthViewLayout | null = null;
+  /** Index into {@link clones} of the focused clone, or `null`. */
+  private focused: number | null = null;
+  /** The clone whose click activated its window, painted on top while closing. */
+  private activatedClone: Clutter.Clone | null = null;
+  /** Whether a close ease has started; the focus no longer moves. */
+  private closing = false;
   /** `onDone` callbacks of animated closes whose ease has not landed yet. */
   private pendingDone: (() => void)[] = [];
   /**
@@ -92,6 +126,9 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       return false;
     }
     this.workAreaOrigin = { x: workArea.x, y: workArea.y };
+    this.activatedClone = null;
+    this.closing = false;
+    this.focused = null;
 
     // Bottom-to-top, as `global.get_window_actors()` returns them. Clutter
     // paints children in insertion order and does not depth-sort, so the
@@ -119,6 +156,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       { width: workArea.width, height: workArea.height },
       DEPTH_VIEW_TUNING
     );
+    this.layout = layout;
     const animate = shouldAnimate();
 
     // Start from the desktop: an untransformed container, every clone on
@@ -128,7 +166,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     container.set_scale(1, 1);
     container.set_translation(0, 0, 0);
 
-    entries.forEach(({ actor, win, rect }, index) => {
+    entries.forEach(({ actor, win, rect, frame }, index) => {
       const clone = new Clutter.Clone({
         source: actor,
         reactive: true,
@@ -138,16 +176,17 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       clone.opacity = 255;
 
       const clickHandlerId = clone.connect('button-press-event', () => {
-        // Paint the chosen clone on top while it eases back, matching the
-        // stacking the real windows will have when they reappear.
-        clone.get_parent()?.set_child_above_sibling(clone, null);
+        // The close paints the chosen clone on top while it eases back,
+        // matching the stacking the real windows will have when they
+        // reappear.
+        this.activatedClone = clone;
         this.activateWindow(win);
         onActivated();
         return Clutter.EVENT_STOP;
       });
 
       container.add_child(clone);
-      this.clones.push({ clone, win, rect, clickHandlerId });
+      this.clones.push({ clone, win, rect, frame, clickHandlerId });
 
       const placement = layout.clones[index];
       const target = {
@@ -184,6 +223,52 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     return this.clones.length > 0;
   }
 
+  cycleAt(point: Point, direction: CycleDirection): boolean {
+    const container = this.getContainer();
+    const layout = this.layout;
+    if (container === null || layout === null || this.clones.length === 0 || this.closing) {
+      return false;
+    }
+
+    const local = { x: point.x - this.workAreaOrigin.x, y: point.y - this.workAreaOrigin.y };
+    const group = windowsUnder(
+      local,
+      this.clones.map(({ frame }) => frame),
+      layout
+    );
+    if (group.length < 2) {
+      return false;
+    }
+    const next = cycleFocus(group, this.focused, direction);
+    if (next === this.focused) {
+      return false;
+    }
+
+    const animate = shouldAnimate();
+    const setOpacity = (clone: Clutter.Clone, opacity: number) => {
+      if (animate) {
+        clone.ease({ opacity, duration: DEPTH_VIEW_TUNING.cycleMs, mode: EASE_MODE });
+      } else {
+        clone.remove_all_transitions();
+        clone.opacity = opacity;
+      }
+    };
+
+    const previous = this.focused;
+    if (previous !== null) {
+      const { clone } = this.clones[previous];
+      this.restoreMountPosition(container, previous);
+      setOpacity(clone, layout.clones[previous]?.opacity ?? 255);
+    }
+    const { clone } = this.clones[next];
+    container.set_child_above_sibling(clone, null);
+    setOpacity(clone, 255);
+
+    this.focused = next;
+    this.lastCycledAt = Date.now();
+    return true;
+  }
+
   unmount(options: UnmountOptions = {}): void {
     const container = this.getContainer();
     if (options.immediate === true || container === null || !shouldAnimate()) {
@@ -198,9 +283,24 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     // Supersede any ease in flight: its callbacks fire (unfinished) when
     // the transitions are removed below and must not tear anything down.
     const generation = ++this.generation;
+    this.closing = true;
     container.remove_all_transitions();
     for (const { clone } of this.clones) {
       clone.remove_all_transitions();
+    }
+
+    // Undo the focus's raise before the clones land: paint them in the
+    // real stacking order, with the activated clone on top, so the real
+    // windows reappear under clones stacked the way the windows are and any
+    // overlapping region changes owner while the clones are still moving.
+    // The ease below takes every clone to full opacity, so the focus's
+    // opacity needs no separate undo.
+    this.focused = null;
+    for (const { clone } of this.clones) {
+      container.set_child_above_sibling(clone, null);
+    }
+    if (this.activatedClone !== null && this.activatedClone.get_parent() === container) {
+      container.set_child_above_sibling(this.activatedClone, null);
     }
 
     // One count per ease plus one for this loop, so a callback that runs
@@ -239,7 +339,24 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     return {
       clonedCount: this.clones.length,
       lastActivatedAt: this.lastActivatedAt,
+      lastCycledAt: this.lastCycledAt,
     };
+  }
+
+  /**
+   * Put the clone at `index` back at its mount position among the
+   * container's children: directly above the nearest clone below it in
+   * mount order, or at the bottom if there is none. Every other clone is
+   * at its mount position, since at most one clone is ever raised.
+   */
+  private restoreMountPosition(container: St.Widget, index: number): void {
+    const { clone } = this.clones[index];
+    const below = index > 0 ? this.clones[index - 1].clone : null;
+    if (below === null) {
+      container.set_child_below_sibling(clone, null);
+    } else {
+      container.set_child_above_sibling(clone, below);
+    }
   }
 
   /**
@@ -258,6 +375,10 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       this.disposeClone(mounted);
     }
     this.clones = [];
+    this.layout = null;
+    this.focused = null;
+    this.activatedClone = null;
+    this.closing = false;
 
     const done = this.pendingDone;
     this.pendingDone = [];

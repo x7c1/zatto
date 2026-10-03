@@ -6,7 +6,7 @@ Switching to a window that is already visible on screen, just partially hidden b
 
 ## Status
 
-Proof of concept. Entering the bottom-left hot corner opens an overlay: the real windows are hidden and their clones slide from the windows' positions into an oblique, translucent depth view of the stacking order, with deeper windows offset towards the top-left. The depth view is drawn in the work area, between the top bar and the dock, which stay visible and usable. Clicking a clone raises its window, and Esc, re-entering the corner or clicking outside the depth view (on the top bar or the dock, for example) closes the overlay; closing slides the clones back onto the windows before the real windows reappear. Cycling the windows under the cursor with the scroll wheel is the next step.
+Proof of concept. Entering the bottom-left hot corner opens an overlay: the real windows are hidden and their clones slide from the windows' positions into an oblique, translucent depth view of the stacking order, with deeper windows offset towards the top-left. The depth view is drawn in the work area, between the top bar and the dock, which stay visible and usable. Clicking a clone raises its window, and Esc, re-entering the corner or clicking outside the depth view (on the top bar or the dock, for example) closes the overlay; closing slides the clones back onto the windows before the real windows reappear. With the overlay open, the scroll wheel moves a focus through the windows that overlap under the cursor, one window per notch: the focused window turns opaque and comes to the front of the picture while nothing moves, and a click raises it.
 
 ## License
 

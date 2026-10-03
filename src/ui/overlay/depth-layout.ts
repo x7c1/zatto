@@ -56,6 +56,13 @@ export interface DepthViewTuning {
    * Activities Overview.
    */
   readonly transitionMs: number;
+  /**
+   * Duration of the opacity ease when the scroll wheel moves the focus
+   * through the windows under the cursor, in ms. Shorter than
+   * {@link transitionMs} because only one or two clones fade. Not an
+   * input to {@link computeDepthLayout} either.
+   */
+  readonly cycleMs: number;
 }
 
 export const DEPTH_VIEW_TUNING: DepthViewTuning = {
@@ -63,6 +70,7 @@ export const DEPTH_VIEW_TUNING: DepthViewTuning = {
   depthStepPx: 32,
   opacity: 0.85,
   transitionMs: 250,
+  cycleMs: 150,
 };
 
 export interface Rect {

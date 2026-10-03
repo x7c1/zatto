@@ -17,18 +17,32 @@
  *
  * The overlay actor is supplied lazily via the `getOverlayActor` callback so
  * this class does not have to know how the overlay is mounted; it is used
- * only to tell presses inside the overlay from presses outside it.
+ * only to tell presses and scrolls inside the overlay from those outside it.
+ *
+ * A vertical scroll over the overlay is turned into scroll steps and
+ * consumed, so it does not reach anything beneath; a scroll outside it
+ * (top bar, dock) propagates untouched. Wheel notches arrive as `UP` /
+ * `DOWN` events and touchpad (or high-resolution wheel) motion as
+ * `SMOOTH` events, which a {@link ScrollStepper} quantises into steps;
+ * when a touchpad gesture ends (the event carries scroll finish flags),
+ * the stepper drops its remainder.
+ * Mutter emulates the one kind from the other, so, like gnome-shell's own
+ * scroll handlers, events flagged as pointer-emulated are ignored (but
+ * still consumed) to avoid counting one notch twice.
  */
 
 import Clutter from 'gi://Clutter';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
-import type { ModalGrabPort } from '../../ui/overlay/ports.js';
+import type { ModalGrabPort, ScrollStep } from '../../ui/overlay/ports.js';
+import { type ScrollStepDirection, ScrollStepper } from './scroll-stepper.js';
 
 export class GnomeModalGrab implements ModalGrabPort {
   private grab: Clutter.Grab | null = null;
   private capturedEventId: number | null = null;
   private escHandler: (() => void) | null = null;
   private outsidePressHandler: (() => void) | null = null;
+  private scrollHandler: ((scroll: ScrollStep) => void) | null = null;
+  private readonly scrollStepper = new ScrollStepper();
 
   constructor(private readonly getOverlayActor: () => Clutter.Actor | null) {}
 
@@ -40,10 +54,15 @@ export class GnomeModalGrab implements ModalGrabPort {
     this.outsidePressHandler = handler;
   }
 
+  onScroll(handler: (scroll: ScrollStep) => void): void {
+    this.scrollHandler = handler;
+  }
+
   acquire(): boolean {
     if (this.grab !== null) {
       return true;
     }
+    this.scrollStepper.reset();
     try {
       this.grab = Main.pushModal(global.stage) as Clutter.Grab;
     } catch (e) {
@@ -90,7 +109,42 @@ export class GnomeModalGrab implements ModalGrabPort {
       // on the dock or the top bar does what it does on the desktop.
       this.outsidePressHandler?.();
     }
+    if (type === Clutter.EventType.SCROLL && this.isInsideOverlay(event)) {
+      this.onScrollEvent(event);
+      return Clutter.EVENT_STOP;
+    }
     return Clutter.EVENT_PROPAGATE;
+  }
+
+  /** Turn a scroll over the overlay into zero or more scroll steps. */
+  private onScrollEvent(event: Clutter.Event): void {
+    if (event.is_pointer_emulated()) {
+      return;
+    }
+    let steps: ScrollStepDirection[];
+    switch (event.get_scroll_direction()) {
+      case Clutter.ScrollDirection.UP:
+        steps = ['up'];
+        break;
+      case Clutter.ScrollDirection.DOWN:
+        steps = ['down'];
+        break;
+      case Clutter.ScrollDirection.SMOOTH: {
+        const [, dy] = event.get_scroll_delta();
+        steps = this.scrollStepper.push(dy);
+        if (event.get_scroll_finish_flags() !== Clutter.ScrollFinishFlags.NONE) {
+          this.scrollStepper.finish();
+        }
+        break;
+      }
+      default:
+        // LEFT / RIGHT: horizontal scrolling does not cycle.
+        return;
+    }
+    const [x, y] = event.get_coords();
+    for (const direction of steps) {
+      this.scrollHandler?.({ x, y, direction });
+    }
   }
 
   private isInsideOverlay(event: Clutter.Event): boolean {

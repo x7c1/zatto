@@ -18,6 +18,9 @@
  * - {@link RealWindowsPort} -> `GnomeRealWindows` (`gnome-real-windows.ts`)
  */
 
+import type { ScrollStepDirection } from '../../libs/shell/scroll-stepper.js';
+import type { CycleDirection, Point } from './depth-cycle.js';
+
 /**
  * Bottom-left hot corner. Fires {@link HotCornerPort.onEnter} every time the
  * cursor enters the corner rect; the controller is responsible for debouncing
@@ -59,9 +62,23 @@ export interface OverlayActorPort {
 }
 
 /**
- * Wraps the modal input grab plus the input it watches while held (Esc and
- * presses outside the overlay) into a single port, since in production they
- * share the same grab and are acquired / released as a unit.
+ * One scroll step over the overlay, in stage coordinates. A wheel notch is
+ * one step; a smooth (touchpad) scroll yields one step per whole unit of
+ * vertical delta.
+ */
+export interface ScrollStep {
+  /** Pointer x in stage coordinates. */
+  readonly x: number;
+  /** Pointer y in stage coordinates. */
+  readonly y: number;
+  readonly direction: ScrollStepDirection;
+}
+
+/**
+ * Wraps the modal input grab plus the input it watches while held (Esc,
+ * presses outside the overlay and scrolling over it) into a single port,
+ * since in production they share the same grab and are acquired /
+ * released as a unit.
  *
  * Handlers must be registered before {@link acquire}; they are invoked only
  * while the grab is held.
@@ -79,6 +96,14 @@ export interface ModalGrabPort {
    * exactly one handler at a time; the most recent registration wins.
    */
   onOutsidePress(handler: () => void): void;
+  /**
+   * Register the scroll handler, invoked once per {@link ScrollStep} of a
+   * vertical scroll over the overlay while the grab is held. Such a scroll
+   * is consumed; a scroll outside the overlay (top bar, dock) reaches its
+   * target and does not invoke the handler. The port supports exactly one
+   * handler at a time; the most recent registration wins.
+   */
+  onScroll(handler: (scroll: ScrollStep) => void): void;
   /**
    * Acquire the modal grab. Returns whether the grab is now held — a `false`
    * return means the controller should treat the open as having failed and
@@ -104,6 +129,13 @@ export interface WindowMirrorSnapshot {
    * clone click, or `null` if no activation has happened yet.
    */
   readonly lastActivatedAt: number | null;
+  /**
+   * Epoch ms of the most recent {@link WindowMirrorPort.cycleAt} call that
+   * moved the focus, or `null` if none yet. Lets an on-hardware check tell
+   * a scroll that never reached the mirror from one that found nothing to
+   * cycle through.
+   */
+  readonly lastCycledAt: number | null;
 }
 
 /** Options for {@link WindowMirrorPort.unmount}. */
@@ -153,6 +185,19 @@ export interface WindowMirrorPort {
    * by that teardown. Must be idempotent.
    */
   unmount(options?: UnmountOptions): void;
+  /**
+   * Move the focus one step through the windows drawn under `point`
+   * (stage coordinates): `forward` one window deeper, `backward` one
+   * window nearer, wrapping at either end. With no focus at that spot the
+   * focus is taken to sit on the frontmost window there, so the first
+   * `forward` step focuses the window behind it. The focused clone turns
+   * opaque and is drawn on top of the others; the rest stay translucent.
+   * Nothing moves or resizes, and the real stacking order is untouched
+   * until a clone is clicked. At most one clone is focused at a time.
+   * Returns whether the focus changed (`false` with fewer than two windows
+   * under the point, or with nothing mounted).
+   */
+  cycleAt(point: Point, direction: CycleDirection): boolean;
   /** Cheap state snapshot for the D-Bus Inspect endpoint. */
   snapshot(): WindowMirrorSnapshot;
 }
