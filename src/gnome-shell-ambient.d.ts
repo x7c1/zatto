@@ -52,6 +52,11 @@ declare module 'gi://Meta' {
   export { default } from '@girs/meta-18/meta-18';
 }
 
+declare module 'gi://Pango' {
+  export * from '@girs/pango-1.0/pango-1.0';
+  export { default } from '@girs/pango-1.0/pango-1.0';
+}
+
 // Global console for logging (GNOME Shell provides this at runtime).
 declare const console: {
   log(...args: any[]): void;

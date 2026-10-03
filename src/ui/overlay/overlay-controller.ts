@@ -21,7 +21,9 @@
  *
  * While `open`, each scroll step over the overlay moves the focus through
  * the windows under the cursor (`down` one window deeper, `up` one window
- * nearer); steps in any other state are dropped.
+ * nearer), and each pointer motion updates the strip of thumbnails of the
+ * windows under the cursor; steps and motions in any other state are
+ * dropped.
  */
 
 import { type OverlayState, OverlayStateMachine } from './overlay-state-machine.js';
@@ -134,6 +136,13 @@ export class OverlayController {
         return;
       }
       this.windowMirror.cycleAt({ x, y }, direction === 'down' ? 'forward' : 'backward');
+    });
+    // The cycle strip follows the pointer under the same guard as cycling.
+    this.modalGrab.onMotion((point) => {
+      if (this.fsm.getState() !== 'open') {
+        return;
+      }
+      this.windowMirror.hoverAt(point);
     });
     // The modal grab is on the stage, so the trigger keeps firing while the
     // overlay is open: one trigger both opens and closes it.
