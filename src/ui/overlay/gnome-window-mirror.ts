@@ -19,9 +19,9 @@
  * moves a single focus through the windows drawn under the cursor. The
  * layout computed at mount stays as it is for as long as the overlay is
  * open: no clone moves or resizes and the container transform does not
- * change. The focused clone eases to full opacity and is raised to the
+ * change. The focused clone eases to `focusedOpacity` and is raised to the
  * top of the container's children (Clutter paints in child order, so an
- * opaque clone would otherwise still be covered by the translucent ones
+ * raised clone would otherwise still be covered by the ones
  * in front of it); the previously focused clone eases back to the layout
  * opacity and returns to its mount position among the children. The real
  * stacking order is never touched: closing first puts the children back
@@ -262,7 +262,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     }
     const { clone } = this.clones[next];
     container.set_child_above_sibling(clone, null);
-    setOpacity(clone, 255);
+    setOpacity(clone, Math.round(DEPTH_VIEW_TUNING.focusedOpacity * 255));
 
     this.focused = next;
     this.lastCycledAt = Date.now();

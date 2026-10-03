@@ -5,6 +5,7 @@ const tuning = {
   depthAxisDegrees: 45,
   depthStepPx: 32,
   opacity: 0.85,
+  focusedOpacity: 225 / 255,
   transitionMs: 250,
   cycleMs: 150,
 };
