@@ -30,6 +30,12 @@
  * scroll handlers, events flagged as pointer-emulated are ignored (but
  * still consumed) to avoid counting one notch twice.
  *
+ * Tab and Shift+Tab (which arrives as `ISO_Left_Tab` on most layouts)
+ * are reported as the same kind of step as a wheel notch down and up, at
+ * the pointer's current position, and consumed; so the keyboard cycles
+ * exactly what the wheel would cycle at that spot. Enter is reported as
+ * a confirm at the pointer's position and consumed.
+ *
  * Every pointer motion while the grab is held is reported, in stage
  * coordinates, wherever it happens (the top bar and the dock included),
  * and propagates untouched.
@@ -48,6 +54,7 @@ export class GnomeModalGrab implements ModalGrabPort {
   private outsidePressHandler: (() => void) | null = null;
   private scrollHandler: ((scroll: ScrollStep) => void) | null = null;
   private motionHandler: ((point: Point) => void) | null = null;
+  private confirmHandler: ((point: Point) => void) | null = null;
   private readonly scrollStepper = new ScrollStepper();
 
   constructor(private readonly getOverlayActor: () => Clutter.Actor | null) {}
@@ -66,6 +73,10 @@ export class GnomeModalGrab implements ModalGrabPort {
 
   onMotion(handler: (point: Point) => void): void {
     this.motionHandler = handler;
+  }
+
+  onConfirm(handler: (point: Point) => void): void {
+    this.confirmHandler = handler;
   }
 
   acquire(): boolean {
@@ -107,9 +118,23 @@ export class GnomeModalGrab implements ModalGrabPort {
 
   private onCapturedEvent(event: Clutter.Event): boolean {
     const type = event.type();
-    if (type === Clutter.EventType.KEY_PRESS && event.get_key_symbol() === Clutter.KEY_Escape) {
-      this.escHandler?.();
-      return Clutter.EVENT_STOP;
+    if (type === Clutter.EventType.KEY_PRESS) {
+      const keysym = event.get_key_symbol();
+      if (keysym === Clutter.KEY_Escape) {
+        this.escHandler?.();
+        return Clutter.EVENT_STOP;
+      }
+      const tabDirection = tabStepDirection(keysym, event.get_state());
+      if (tabDirection !== null) {
+        const [x, y] = global.get_pointer();
+        this.scrollHandler?.({ x, y, direction: tabDirection });
+        return Clutter.EVENT_STOP;
+      }
+      if (keysym === Clutter.KEY_Return || keysym === Clutter.KEY_KP_Enter) {
+        const [x, y] = global.get_pointer();
+        this.confirmHandler?.({ x, y });
+        return Clutter.EVENT_STOP;
+      }
     }
     if (
       (type === Clutter.EventType.BUTTON_PRESS || type === Clutter.EventType.TOUCH_BEGIN) &&
@@ -163,11 +188,28 @@ export class GnomeModalGrab implements ModalGrabPort {
   }
 
   private isInsideOverlay(event: Clutter.Event): boolean {
-    const overlay = this.getOverlayActor();
-    const target = global.stage.get_event_actor(event);
-    if (overlay === null || target === null) {
-      return false;
-    }
-    return overlay.contains(target);
+    return isInside(this.getOverlayActor(), event);
   }
+}
+
+/**
+ * The step a Tab key press stands for: Tab is a notch down (one window
+ * deeper), Shift+Tab a notch up. `null` for any other key.
+ */
+function tabStepDirection(keysym: number, state: Clutter.ModifierType): ScrollStepDirection | null {
+  if (keysym === Clutter.KEY_ISO_Left_Tab) {
+    return 'up';
+  }
+  if (keysym === Clutter.KEY_Tab) {
+    return (state & Clutter.ModifierType.SHIFT_MASK) !== 0 ? 'up' : 'down';
+  }
+  return null;
+}
+
+function isInside(overlay: Clutter.Actor | null, event: Clutter.Event): boolean {
+  const target = global.stage.get_event_actor(event);
+  if (overlay === null || target === null) {
+    return false;
+  }
+  return overlay.contains(target);
 }

@@ -144,6 +144,14 @@ export class OverlayController {
       }
       this.windowMirror.hoverAt(point);
     });
+    // Enter confirms like a click: the mirror raises the window and runs
+    // the mount's onActivated, which dismisses.
+    this.modalGrab.onConfirm((point) => {
+      if (this.fsm.getState() !== 'open') {
+        return;
+      }
+      this.windowMirror.activateAt(point);
+    });
     // The modal grab is on the stage, so the trigger keeps firing while the
     // overlay is open: one trigger both opens and closes it.
     this.hotCorner.onEnter(() => {
