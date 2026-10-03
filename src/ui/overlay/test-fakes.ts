@@ -84,6 +84,7 @@ export class FakeModalGrab implements ModalGrabPort {
   private outsidePressHandler: (() => void) | null = null;
   private scrollHandler: ((scroll: ScrollStep) => void) | null = null;
   private motionHandler: ((point: Point) => void) | null = null;
+  private confirmHandler: ((point: Point) => void) | null = null;
 
   onEsc(handler: () => void): void {
     this.escHandler = handler;
@@ -99,6 +100,10 @@ export class FakeModalGrab implements ModalGrabPort {
 
   onMotion(handler: (point: Point) => void): void {
     this.motionHandler = handler;
+  }
+
+  onConfirm(handler: (point: Point) => void): void {
+    this.confirmHandler = handler;
   }
 
   acquire(): boolean {
@@ -153,6 +158,14 @@ export class FakeModalGrab implements ModalGrabPort {
   fireMotion(point: Point): void {
     this.motionHandler?.(point);
   }
+
+  /**
+   * Test helper: simulate an Enter press. Fires even when no grab is held,
+   * so tests can check that the controller itself drops it outside `open`.
+   */
+  fireConfirm(point: Point): void {
+    this.confirmHandler?.(point);
+  }
 }
 
 export class FakeWindowMirror implements WindowMirrorPort {
@@ -180,6 +193,10 @@ export class FakeWindowMirror implements WindowMirrorPort {
   cycledAtStamp = 2_000;
   /** Every `hoverAt()` call's point, in order. */
   readonly hoverCalls: Point[] = [];
+  /** Every `activateAt()` call's point, in order. */
+  readonly activateCalls: Point[] = [];
+  /** Epoch ms that `activateAt()` records as `lastActivatedAt`. */
+  activatedAtStamp = 3_000;
   /** What `snapshot()` reports as `stripCount`. */
   stripCount = 0;
   private lastCycledAt: number | null = null;
@@ -241,6 +258,15 @@ export class FakeWindowMirror implements WindowMirrorPort {
 
   hoverAt(point: Point): void {
     this.hoverCalls.push(point);
+  }
+
+  activateAt(point: Point): boolean {
+    this.activateCalls.push(point);
+    if (this.activatedHandler === null) {
+      return false;
+    }
+    this.simulateActivate(this.activatedAtStamp);
+    return true;
   }
 
   snapshot(): WindowMirrorSnapshot {
