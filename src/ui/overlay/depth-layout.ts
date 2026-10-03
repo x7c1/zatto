@@ -50,6 +50,13 @@ export interface DepthViewTuning {
   /** Opacity of every clone, as a fraction in 0..1. */
   readonly opacity: number;
   /**
+   * Opacity of the clone the focus sits on while cycling, as a fraction
+   * in 0..1. Above {@link opacity} so the focused window stands out, but
+   * below 1 so what lies behind it still shows through a little. Not an
+   * input to {@link computeDepthLayout}.
+   */
+  readonly focusedOpacity: number;
+  /**
    * Duration of the ease between the desktop and the depth view, in ms.
    * Not an input to {@link computeDepthLayout}; it lives here so all the
    * depth view's knobs sit in one place. 250 ms matches gnome-shell's
@@ -68,7 +75,8 @@ export interface DepthViewTuning {
 export const DEPTH_VIEW_TUNING: DepthViewTuning = {
   depthAxisDegrees: 45,
   depthStepPx: 32,
-  opacity: 0.85,
+  opacity: 0.8,
+  focusedOpacity: 225 / 255,
   transitionMs: 250,
   cycleMs: 150,
 };
