@@ -1,7 +1,9 @@
 /**
  * The cycle strip: a row of live thumbnails along the bottom of the depth
- * view showing the windows under the cursor, frontmost on the left, with
- * an accent frame around the focused one and its title under the strip.
+ * view showing the windows under the cursor, frontmost on the left, each
+ * with its app icon on its top edge, with a translucent rounded highlight
+ * behind the focused one, as the Alt+Tab switcher marks its selection, and
+ * its title under the strip.
  *
  * Owned by `GnomeWindowMirror`, which decides when to show, highlight and
  * hide it. The strip is parented to the overlay's chrome container (see
@@ -17,6 +19,7 @@
 import Clutter from 'gi://Clutter';
 import type Meta from 'gi://Meta';
 import Pango from 'gi://Pango';
+import Shell from 'gi://Shell';
 import St from 'gi://St';
 import { shouldAnimate } from '../../libs/shell/animations.js';
 import { CYCLE_STRIP_TUNING, computeStripLayout } from './cycle-strip-layout.js';
@@ -26,12 +29,15 @@ import type { Rect, Size } from './depth-layout.js';
 const EASE_MODE = Clutter.AnimationMode.EASE_OUT_QUAD;
 
 const BACKGROUND_STYLE = 'background-color: rgba(30, 30, 30, 0.85); border-radius: 12px;';
-const FRAME_STYLE = 'border: 2px solid rgba(255, 255, 255, 0.9); border-radius: 6px;';
-const LABEL_STYLE = 'color: white; font-weight: bold; text-align: center;';
-/** How far the frame sits outside the highlighted thumbnail, in px. */
-const FRAME_OUTSET_PX = 4;
-/** Gap between the strip's bottom edge and the title, in px. */
-const LABEL_GAP_PX = 4;
+const HIGHLIGHT_STYLE = 'background-color: rgba(255, 255, 255, 0.2); border-radius: 10px;';
+/**
+ * The Shell's own style for a window title over arbitrary content: the pill
+ * the Activities Overview draws under each window preview. Reusing the
+ * class keeps the title legible over any clone and follows the theme.
+ */
+const TITLE_STYLE_CLASS = 'window-caption';
+/** How far the highlight extends beyond the highlighted thumbnail and its icon, in px. */
+const HIGHLIGHT_PAD_PX = 6;
 
 /** One window shown in the strip. */
 export interface CycleStripMember {
@@ -52,7 +58,7 @@ interface Shown {
   readonly thumbs: Clutter.Clone[];
   readonly thumbRects: Rect[];
   readonly members: readonly CycleStripMember[];
-  readonly frame: St.Widget;
+  readonly highlight: St.Widget;
   readonly label: St.Label;
 }
 
@@ -128,6 +134,10 @@ export class CycleStrip {
     setRect(background, layout.strip);
     root.add_child(background);
 
+    // Behind the thumbnails, so the highlighted one sits on the pad.
+    const highlight = new St.Widget({ style: HIGHLIGHT_STYLE, reactive: false });
+    root.add_child(highlight);
+
     const thumbs = members.map((member, i) => {
       const thumb = new Clutter.Clone({ source: member.actor, reactive: true });
       setRect(thumb, layout.thumbs[i]);
@@ -139,15 +149,32 @@ export class CycleStrip {
       return thumb;
     });
 
-    const frame = new St.Widget({ style: FRAME_STYLE, reactive: false });
-    root.add_child(frame);
+    members.forEach((member, i) => {
+      const icon = appIconOf(member.win, CYCLE_STRIP_TUNING.iconSizePx);
+      if (icon !== null) {
+        icon.reactive = false;
+        setRect(icon, layout.icons[i]);
+        root.add_child(icon);
+      }
+    });
 
-    const label = new St.Label({ style: LABEL_STYLE, reactive: false });
+    // The title sits in a bin as wide as the strip, which centres the pill
+    // on the text's own width; the pill never grows past the strip.
+    const label = new St.Label({
+      reactive: false,
+      style: `max-width: ${Math.round(layout.title.width)}px;`,
+    });
+    label.add_style_class_name(TITLE_STYLE_CLASS);
     label.clutter_text.ellipsize = Pango.EllipsizeMode.END;
     label.clutter_text.single_line_mode = true;
-    label.set_position(layout.strip.x, layout.strip.y + layout.strip.height + LABEL_GAP_PX);
-    label.set_width(layout.strip.width);
-    root.add_child(label);
+    const titleBin = new St.Bin({
+      reactive: false,
+      x_align: Clutter.ActorAlign.CENTER,
+      y_align: Clutter.ActorAlign.CENTER,
+      child: label,
+    });
+    setRect(titleBin, layout.title);
+    root.add_child(titleBin);
 
     container.add_child(root);
     this.shown = {
@@ -156,7 +183,7 @@ export class CycleStrip {
       thumbs,
       thumbRects: layout.thumbs,
       members,
-      frame,
+      highlight,
       label,
     };
     this.setHighlight(highlighted);
@@ -168,7 +195,7 @@ export class CycleStrip {
     }
   }
 
-  /** Move the frame to the thumbnail at `position` and show its title. */
+  /** Move the highlight to the thumbnail at `position` and show its title. */
   setHighlight(position: number): void {
     const shown = this.shown;
     if (shown === null) {
@@ -179,11 +206,13 @@ export class CycleStrip {
     if (rect === undefined || member === undefined) {
       return;
     }
-    setRect(shown.frame, {
-      x: rect.x - FRAME_OUTSET_PX,
-      y: rect.y - FRAME_OUTSET_PX,
-      width: rect.width + 2 * FRAME_OUTSET_PX,
-      height: rect.height + 2 * FRAME_OUTSET_PX,
+    // Covers the thumbnail and the half icon above it, plus the pad.
+    const iconHalf = CYCLE_STRIP_TUNING.iconSizePx / 2;
+    setRect(shown.highlight, {
+      x: rect.x - HIGHLIGHT_PAD_PX,
+      y: rect.y - iconHalf - HIGHLIGHT_PAD_PX,
+      width: rect.width + 2 * HIGHLIGHT_PAD_PX,
+      height: rect.height + iconHalf + 2 * HIGHLIGHT_PAD_PX,
     });
     shown.label.text = titleOf(member.win);
   }
@@ -239,6 +268,21 @@ function setRect(actor: Clutter.Actor, rect: Rect): void {
 function destroyRoot(root: St.Widget): void {
   root.remove_all_transitions();
   root.destroy();
+}
+
+/**
+ * The icon of the app that owns `win`, sized `size` px, as the Activities
+ * Overview draws it on its window previews, or `null` when no app is
+ * known for the window.
+ */
+function appIconOf(win: Meta.Window, size: number): Clutter.Actor | null {
+  try {
+    const app = Shell.WindowTracker.get_default().get_window_app(win);
+    return app ? app.create_icon_texture(size) : null;
+  } catch (e) {
+    console.warn(`[Zatto] CycleStrip: app icon unavailable: ${e}`);
+    return null;
+  }
 }
 
 function titleOf(win: Meta.Window): string {

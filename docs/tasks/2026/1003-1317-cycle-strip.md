@@ -146,9 +146,21 @@ positions and the cycling behaviour from the previous change.
   hovered or the overlay closes, and clicking a thumbnail raises that
   window. Keep the README short.
 
+### Adjustments from the on-hardware check
+
+- The highlight is a translucent rounded pad behind the focused
+  thumbnail and its icon, as the Alt+Tab switcher marks its selection,
+  instead of a frame around it; `thumbGapPx` grew to 18 so the pad stays
+  clear of the neighbouring thumbnails.
+- Each thumbnail carries its app icon centred on its top edge
+  (`iconSizePx`), the Activities Overview's window-preview icon moved
+  from the bottom edge to the top.
+- The title is drawn as the Shell's `window-caption` pill, centred under
+  the strip in a reserved `titleHeightPx` band above `bottomMarginPx`, so
+  it is legible over any clone and no longer touches the bottom edge.
+
 Out of scope: thumbnails cropped to the frame rect (shadows excluded),
-app icons on the thumbnails, keyboard navigation of the strip, and the
-touchpad pace factor.
+keyboard navigation of the strip, and the touchpad pace factor.
 
 ## Acceptance criteria
 
@@ -176,10 +188,11 @@ touchpad pace factor.
 - [ ] On a real GNOME Shell session with `npm run dev`, with three
       windows overlapping, opening the overlay and resting the cursor on
       the overlap shows a strip of three thumbnails along the bottom,
-      frontmost on the left, with the leftmost framed and its title under
-      the strip; each scroll-down notch moves the frame one thumbnail to
-      the right and wraps, in step with the large clone that turns opaque;
-      scroll-up reverses it.
+      frontmost on the left, each with its app icon on its top edge, the
+      leftmost highlighted and its title in a pill under the strip; each
+      scroll-down notch moves the highlight one thumbnail to the right and
+      wraps, in step with the large clone that comes forward; scroll-up
+      reverses it.
 - [ ] Moving the cursor to a spot with one window or none leaves the
       strip as it is; moving it to another overlap shows that group's
       thumbnails; carrying the cursor from the overlap down onto the strip

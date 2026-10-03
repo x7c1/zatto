@@ -5,11 +5,15 @@
  *
  * Every thumbnail is `thumbHeightPx` tall and as wide as its window's
  * aspect requires. The thumbnails sit in a row, `thumbGapPx` apart,
- * inside a background `paddingPx` larger on every side. The strip is
- * centred horizontally and its bottom edge sits `bottomMarginPx` above
- * the bottom of the work area. A row that would not fit the work area
- * width minus `bottomMarginPx` on either side is scaled down uniformly
- * (the thumbnails only; gaps and padding keep their size) until it does.
+ * inside a background `paddingPx` larger on every side, plus half an
+ * icon at the top: each thumbnail carries its app icon centred on its
+ * top edge, like the Activities Overview's window previews carry theirs
+ * on the bottom edge. Under the strip, `titleHeightPx` is reserved for
+ * the highlighted window's title, and the title's bottom sits
+ * `bottomMarginPx` above the bottom of the work area. The strip is centred
+ * horizontally. A row that would not fit the work area width minus
+ * `bottomMarginPx` on either side is scaled down uniformly (the
+ * thumbnails only; gaps, padding and icons keep their size) until it does.
  *
  * The values in {@link CYCLE_STRIP_TUNING} are starting points for the
  * on-hardware checks, not settled choices.
@@ -22,7 +26,11 @@ import type { Rect, Size } from './depth-layout.js';
 export interface CycleStripTuning {
   /** Height of every thumbnail before any scale-to-fit, in px. */
   readonly thumbHeightPx: number;
-  /** Horizontal distance between adjacent thumbnails, in px. */
+  /**
+   * Horizontal distance between adjacent thumbnails, in px. Wider than the
+   * highlight's pad (see `cycle-strip.ts`), so the highlight behind the
+   * focused thumbnail stays clear of its neighbours.
+   */
   readonly thumbGapPx: number;
   /** Space between the thumbnails and the edge of the background, in px. */
   readonly paddingPx: number;
@@ -32,6 +40,13 @@ export interface CycleStripTuning {
    * and right edges.
    */
   readonly bottomMarginPx: number;
+  /** Side of the square app icon centred on each thumbnail's top edge, in px. */
+  readonly iconSizePx: number;
+  /**
+   * Height reserved under the strip for the highlighted window's title
+   * pill, in px; the pill is centred vertically in it.
+   */
+  readonly titleHeightPx: number;
   /**
    * Duration of the strip's fade in and out, in ms. Not an input to
    * {@link computeStripLayout}; it lives here so all the strip's knobs sit
@@ -42,9 +57,11 @@ export interface CycleStripTuning {
 
 export const CYCLE_STRIP_TUNING: CycleStripTuning = {
   thumbHeightPx: 120,
-  thumbGapPx: 12,
+  thumbGapPx: 18,
   paddingPx: 12,
   bottomMarginPx: 24,
+  iconSizePx: 32,
+  titleHeightPx: 36,
   fadeMs: 150,
 };
 
@@ -53,6 +70,10 @@ export interface StripLayout {
   readonly strip: Rect;
   /** One rect per input size, in the same order, relative to the work area. */
   readonly thumbs: Rect[];
+  /** One square per thumbnail, centred on the thumbnail's top edge. */
+  readonly icons: Rect[];
+  /** Where the highlighted window's title goes: under the strip, as wide as it. */
+  readonly title: Rect;
 }
 
 /**
@@ -65,10 +86,16 @@ export function computeStripLayout(
   area: Size,
   tuning: CycleStripTuning
 ): StripLayout {
-  const { thumbHeightPx, thumbGapPx, paddingPx, bottomMarginPx } = tuning;
-  const bottom = area.height - bottomMarginPx;
+  const { thumbHeightPx, thumbGapPx, paddingPx, bottomMarginPx, iconSizePx, titleHeightPx } =
+    tuning;
+  const bottom = area.height - bottomMarginPx - titleHeightPx;
   if (sizes.length === 0) {
-    return { strip: { x: area.width / 2, y: bottom, width: 0, height: 0 }, thumbs: [] };
+    return {
+      strip: { x: area.width / 2, y: bottom, width: 0, height: 0 },
+      thumbs: [],
+      icons: [],
+      title: { x: area.width / 2, y: bottom, width: 0, height: titleHeightPx },
+    };
   }
 
   const widths = sizes.map(({ width, height }) =>
@@ -81,7 +108,9 @@ export function computeStripLayout(
 
   const thumbHeight = thumbHeightPx * scale;
   const stripWidth = totalWidth * scale + fixed;
-  const stripHeight = thumbHeight + 2 * paddingPx;
+  // Room above the thumbnails for the half of each icon that sticks out.
+  const top = paddingPx + iconSizePx / 2;
+  const stripHeight = top + thumbHeight + paddingPx;
   const strip = {
     x: (area.width - stripWidth) / 2,
     y: bottom - stripHeight,
@@ -92,9 +121,16 @@ export function computeStripLayout(
   let x = strip.x + paddingPx;
   const thumbs = widths.map((w) => {
     const width = w * scale;
-    const rect = { x, y: strip.y + paddingPx, width, height: thumbHeight };
+    const rect = { x, y: strip.y + top, width, height: thumbHeight };
     x += width + thumbGapPx;
     return rect;
   });
-  return { strip, thumbs };
+  const icons = thumbs.map((thumb) => ({
+    x: thumb.x + (thumb.width - iconSizePx) / 2,
+    y: thumb.y - iconSizePx / 2,
+    width: iconSizePx,
+    height: iconSizePx,
+  }));
+  const title = { x: strip.x, y: bottom, width: stripWidth, height: titleHeightPx };
+  return { strip, thumbs, icons, title };
 }
