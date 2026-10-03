@@ -8,12 +8,14 @@
  * implementation details.
  */
 
+import type { CycleDirection, Point } from './depth-cycle.js';
 import type {
   HotCornerPort,
   ModalGrabPort,
   OverlayActorPort,
   RealWindowsPort,
   RealWindowsSnapshot,
+  ScrollStep,
   UnmountOptions,
   WindowMirrorPort,
   WindowMirrorSnapshot,
@@ -80,6 +82,7 @@ export class FakeModalGrab implements ModalGrabPort {
   private held = false;
   private escHandler: (() => void) | null = null;
   private outsidePressHandler: (() => void) | null = null;
+  private scrollHandler: ((scroll: ScrollStep) => void) | null = null;
 
   onEsc(handler: () => void): void {
     this.escHandler = handler;
@@ -87,6 +90,10 @@ export class FakeModalGrab implements ModalGrabPort {
 
   onOutsidePress(handler: () => void): void {
     this.outsidePressHandler = handler;
+  }
+
+  onScroll(handler: (scroll: ScrollStep) => void): void {
+    this.scrollHandler = handler;
   }
 
   acquire(): boolean {
@@ -123,6 +130,15 @@ export class FakeModalGrab implements ModalGrabPort {
   fireOutsidePress(): void {
     this.outsidePressHandler?.();
   }
+
+  /**
+   * Test helper: simulate one scroll step over the overlay. Fires even
+   * when no grab is held, so tests can check that the controller itself
+   * drops a step outside `open`.
+   */
+  fireScroll(step: ScrollStep): void {
+    this.scrollHandler?.(step);
+  }
 }
 
 export class FakeWindowMirror implements WindowMirrorPort {
@@ -144,6 +160,11 @@ export class FakeWindowMirror implements WindowMirrorPort {
   nextMountCount = 1;
   /** Wall-clock epoch ms recorded on a simulated clone click. */
   lastActivatedAt: number | null = null;
+  /** Every `cycleAt()` call, in order. */
+  readonly cycleCalls: { point: Point; direction: CycleDirection }[] = [];
+  /** Epoch ms that `cycleAt()` records as `lastCycledAt`. */
+  cycledAtStamp = 2_000;
+  private lastCycledAt: number | null = null;
   private clonedCount = 0;
   private activatedHandler: (() => void) | null = null;
   private pendingDone: (() => void)[] = [];
@@ -191,10 +212,20 @@ export class FakeWindowMirror implements WindowMirrorPort {
     }
   }
 
+  cycleAt(point: Point, direction: CycleDirection): boolean {
+    this.cycleCalls.push({ point, direction });
+    if (this.clonedCount === 0) {
+      return false;
+    }
+    this.lastCycledAt = this.cycledAtStamp;
+    return true;
+  }
+
   snapshot(): WindowMirrorSnapshot {
     return {
       clonedCount: this.clonedCount,
       lastActivatedAt: this.lastActivatedAt,
+      lastCycledAt: this.lastCycledAt,
     };
   }
 

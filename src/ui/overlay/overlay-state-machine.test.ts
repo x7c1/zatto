@@ -211,25 +211,86 @@ describe('OverlayStateMachine', () => {
       expect(fsm.getState()).toBe('opening');
     });
 
-    it('rejects a toggle right after dismiss', () => {
+    it('rejects a toggle right after a dismissed close lands with commitClosed', () => {
       const { fsm, advance } = openPastDebounce(200);
       fsm.dismiss();
-      // Without animations the close lands in the same instant.
+      advance(300); // the close ease
       fsm.commitClosed();
 
-      advance(10); // < 200ms since the dismiss
+      advance(10); // < 200ms since the close landed
       expect(fsm.toggle()).toBe(false);
       expect(fsm.getState()).toBe('closed');
     });
 
-    it('accepts a toggle debounceMs after dismiss', () => {
+    it('accepts a toggle debounceMs after a dismissed close lands with commitClosed', () => {
       const { fsm, advance } = openPastDebounce(200);
       fsm.dismiss();
+      advance(300);
       fsm.commitClosed();
 
       advance(200);
       expect(fsm.toggle()).toBe(true);
       expect(fsm.getState()).toBe('opening');
+    });
+  });
+
+  describe('abortOpen', () => {
+    it('returns opening to closed without emitting an event', () => {
+      const { fsm, events } = setup();
+      fsm.toggle();
+      events.length = 0;
+
+      fsm.abortOpen();
+
+      expect(fsm.getState()).toBe('closed');
+      expect(events).toEqual([]);
+    });
+
+    it('restarts the debounce window', () => {
+      const { fsm, advance } = setup({ debounceMs: 200 });
+      fsm.toggle();
+      advance(300); // past the window of the toggle that started the open
+      fsm.abortOpen();
+
+      advance(10);
+      expect(fsm.toggle()).toBe(false);
+      expect(fsm.getState()).toBe('closed');
+
+      advance(200);
+      expect(fsm.toggle()).toBe(true);
+      expect(fsm.getState()).toBe('opening');
+    });
+
+    it('is a no-op when closed', () => {
+      const { fsm, events } = setup({ debounceMs: 200 });
+
+      fsm.abortOpen();
+
+      expect(fsm.getState()).toBe('closed');
+      expect(events).toEqual([]);
+      // The debounce window was not started.
+      expect(fsm.toggle()).toBe(true);
+    });
+
+    it('is a no-op when open', () => {
+      const { fsm } = setup();
+      fsm.toggle();
+      fsm.commitOpened();
+
+      fsm.abortOpen();
+
+      expect(fsm.getState()).toBe('open');
+    });
+
+    it('is a no-op when closing', () => {
+      const { fsm } = setup();
+      fsm.toggle();
+      fsm.commitOpened();
+      fsm.dismiss();
+
+      fsm.abortOpen();
+
+      expect(fsm.getState()).toBe('closing');
     });
   });
 

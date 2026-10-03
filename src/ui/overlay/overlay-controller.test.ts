@@ -231,6 +231,7 @@ describe('OverlayController', () => {
         windowMirror: {
           clonedCount: 0,
           lastActivatedAt: null,
+          lastCycledAt: null,
         },
         realWindows: { hidden: false, lastRestoredAt: 1_000 },
       });
@@ -248,6 +249,7 @@ describe('OverlayController', () => {
         windowMirror: {
           clonedCount: 1,
           lastActivatedAt: null,
+          lastCycledAt: null,
         },
         realWindows: { hidden: true, lastRestoredAt: 1_000 },
       });
@@ -268,12 +270,15 @@ describe('OverlayController', () => {
       // The DBusInspector serializes this exact object with JSON.stringify,
       // so any Date / Map / undefined that sneaks into the snapshot would
       // silently corrupt the wire payload.
-      const { controller, hotCorner, setEpoch } = setup();
+      const { controller, hotCorner, modalGrab, windowMirror, setEpoch } = setup();
       setEpoch(1_700_000_000_500);
       hotCorner.fireEnter();
+      windowMirror.cycledAtStamp = 1_700_000_000_750;
+      modalGrab.fireScroll({ x: 10, y: 20, direction: 'down' });
 
       const snap = controller.snapshot();
       expect(snap.realWindows).toEqual({ hidden: true, lastRestoredAt: 1_000 });
+      expect(snap.windowMirror.lastCycledAt).toBe(1_700_000_000_750);
       expect(JSON.parse(JSON.stringify(snap))).toEqual(snap);
     });
 
@@ -362,6 +367,70 @@ describe('OverlayController', () => {
       expect(controller.snapshot().windowMirror.clonedCount).toBe(6);
     });
   });
+  describe('scroll cycling (onScroll -> cycleAt)', () => {
+    const step = { x: 640, y: 360 };
+
+    it('forwards a step to cycleAt while open, down as forward and up as backward', () => {
+      const { hotCorner, modalGrab, windowMirror } = setup();
+      hotCorner.fireEnter();
+
+      modalGrab.fireScroll({ ...step, direction: 'down' });
+      modalGrab.fireScroll({ ...step, direction: 'up' });
+
+      expect(windowMirror.cycleCalls).toEqual([
+        { point: { x: 640, y: 360 }, direction: 'forward' },
+        { point: { x: 640, y: 360 }, direction: 'backward' },
+      ]);
+    });
+
+    it('drops a step while closed', () => {
+      const { modalGrab, windowMirror } = setup();
+
+      modalGrab.fireScroll({ ...step, direction: 'down' });
+
+      expect(windowMirror.cycleCalls).toEqual([]);
+    });
+
+    it('drops a step while opening', () => {
+      const { controller, hotCorner, modalGrab, windowMirror, realWindows } = setup();
+      const states: string[] = [];
+      // `hide()` runs while the FSM is still in `opening`.
+      realWindows.onCall = (call) => {
+        if (call === 'hide') {
+          states.push(controller.snapshot().overlay.state);
+          modalGrab.fireScroll({ ...step, direction: 'down' });
+        }
+      };
+
+      hotCorner.fireEnter();
+
+      expect(states).toEqual(['opening']);
+      expect(windowMirror.cycleCalls).toEqual([]);
+    });
+
+    it('drops a step while closing', () => {
+      const { controller, hotCorner, modalGrab, windowMirror } = setup();
+      windowMirror.deferUnmountDone = true;
+      hotCorner.fireEnter();
+      modalGrab.fireEsc();
+      expect(controller.snapshot().overlay.state).toBe('closing');
+
+      modalGrab.fireScroll({ ...step, direction: 'down' });
+
+      expect(windowMirror.cycleCalls).toEqual([]);
+    });
+
+    it('does not change the FSM state or touch the real windows', () => {
+      const { controller, hotCorner, modalGrab, realWindows } = setup();
+      hotCorner.fireEnter();
+
+      modalGrab.fireScroll({ ...step, direction: 'down' });
+
+      expect(controller.snapshot().overlay.state).toBe('open');
+      expect(realWindows.calls).toEqual(['restore', 'hide']);
+    });
+  });
+
   describe('real windows and the clone transitions', () => {
     /** Open the overlay with close eases deferred, ready to exercise a close path. */
     function setupOpen() {
@@ -510,14 +579,43 @@ describe('OverlayController', () => {
     });
 
     it('restores the real windows and rethrows when opening fails after hide()', () => {
-      const { controller, hotCorner, realWindows } = setup();
+      const { controller, hotCorner, actor, modalGrab, windowMirror, realWindows, advance } = setup(
+        { debounceMs: 100 }
+      );
       const failure = new Error('boom');
       realWindows.throwAfterHide = failure;
+      // Let the open take longer than the debounce window, so only the
+      // restart in abortOpen() can reject the enter that follows.
+      realWindows.onCall = (call) => {
+        if (call === 'hide') {
+          advance(150);
+        }
+      };
 
       expect(() => hotCorner.fireEnter()).toThrow(failure);
 
       expect(realWindows.calls).toEqual(['restore', 'hide', 'restore']);
       expect(controller.snapshot().realWindows.hidden).toBe(false);
+      // Everything else the open set up is torn down too, and the FSM is
+      // back in `closed` via abortOpen() instead of stuck in `opening`.
+      expect(modalGrab.isHeld()).toBe(false);
+      expect(windowMirror.unmountCalls).toEqual([{ immediate: true }]);
+      expect(actor.isVisible()).toBe(false);
+      expect(controller.snapshot().overlay.state).toBe('closed');
+
+      // abortOpen() restarted the debounce window: an enter synthesized by
+      // the teardown does not reopen the overlay.
+      realWindows.throwAfterHide = null;
+      realWindows.onCall = null;
+      hotCorner.fireEnter();
+      expect(controller.snapshot().overlay.state).toBe('closed');
+
+      // A deliberate enter after the window opens it again.
+      advance(100);
+      hotCorner.fireEnter();
+      expect(controller.snapshot().overlay.state).toBe('open');
+      expect(modalGrab.isHeld()).toBe(true);
+      expect(actor.isVisible()).toBe(true);
     });
   });
 });
