@@ -83,6 +83,7 @@ export class FakeModalGrab implements ModalGrabPort {
   private escHandler: (() => void) | null = null;
   private outsidePressHandler: (() => void) | null = null;
   private scrollHandler: ((scroll: ScrollStep) => void) | null = null;
+  private motionHandler: ((point: Point) => void) | null = null;
 
   onEsc(handler: () => void): void {
     this.escHandler = handler;
@@ -94,6 +95,10 @@ export class FakeModalGrab implements ModalGrabPort {
 
   onScroll(handler: (scroll: ScrollStep) => void): void {
     this.scrollHandler = handler;
+  }
+
+  onMotion(handler: (point: Point) => void): void {
+    this.motionHandler = handler;
   }
 
   acquire(): boolean {
@@ -139,6 +144,15 @@ export class FakeModalGrab implements ModalGrabPort {
   fireScroll(step: ScrollStep): void {
     this.scrollHandler?.(step);
   }
+
+  /**
+   * Test helper: simulate a pointer motion. Fires even when no grab is
+   * held, so tests can check that the controller itself drops a motion
+   * outside `open`.
+   */
+  fireMotion(point: Point): void {
+    this.motionHandler?.(point);
+  }
 }
 
 export class FakeWindowMirror implements WindowMirrorPort {
@@ -164,6 +178,10 @@ export class FakeWindowMirror implements WindowMirrorPort {
   readonly cycleCalls: { point: Point; direction: CycleDirection }[] = [];
   /** Epoch ms that `cycleAt()` records as `lastCycledAt`. */
   cycledAtStamp = 2_000;
+  /** Every `hoverAt()` call's point, in order. */
+  readonly hoverCalls: Point[] = [];
+  /** What `snapshot()` reports as `stripCount`. */
+  stripCount = 0;
   private lastCycledAt: number | null = null;
   private clonedCount = 0;
   private activatedHandler: (() => void) | null = null;
@@ -221,11 +239,16 @@ export class FakeWindowMirror implements WindowMirrorPort {
     return true;
   }
 
+  hoverAt(point: Point): void {
+    this.hoverCalls.push(point);
+  }
+
   snapshot(): WindowMirrorSnapshot {
     return {
       clonedCount: this.clonedCount,
       lastActivatedAt: this.lastActivatedAt,
       lastCycledAt: this.lastCycledAt,
+      stripCount: this.stripCount,
     };
   }
 

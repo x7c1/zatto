@@ -76,7 +76,8 @@ export interface ScrollStep {
 
 /**
  * Wraps the modal input grab plus the input it watches while held (Esc,
- * presses outside the overlay and scrolling over it) into a single port,
+ * presses outside the overlay, scrolling over it and pointer motion) into
+ * a single port,
  * since in production they share the same grab and are acquired /
  * released as a unit.
  *
@@ -104,6 +105,14 @@ export interface ModalGrabPort {
    * handler at a time; the most recent registration wins.
    */
   onScroll(handler: (scroll: ScrollStep) => void): void;
+  /**
+   * Register the motion handler, invoked with the pointer position in stage
+   * coordinates for every pointer motion while the grab is held, anywhere
+   * on the stage (motion over the top bar or the dock included). The motion
+   * still reaches its target. The port supports exactly one handler at a
+   * time; the most recent registration wins.
+   */
+  onMotion(handler: (point: Point) => void): void;
   /**
    * Acquire the modal grab. Returns whether the grab is now held — a `false`
    * return means the controller should treat the open as having failed and
@@ -136,6 +145,12 @@ export interface WindowMirrorSnapshot {
    * cycle through.
    */
   readonly lastCycledAt: number | null;
+  /**
+   * How many thumbnails the cycle strip currently shows, 0 when it is
+   * hidden. Lets an on-hardware check tell a strip that never appeared
+   * from a group of windows too small to show one.
+   */
+  readonly stripCount: number;
 }
 
 /** Options for {@link WindowMirrorPort.unmount}. */
@@ -194,10 +209,24 @@ export interface WindowMirrorPort {
    * opaque and is drawn on top of the others; the rest stay translucent.
    * Nothing moves or resizes, and the real stacking order is untouched
    * until a clone is clicked. At most one clone is focused at a time.
+   * When `point` lies on the cycle strip (see {@link hoverAt}), the focus
+   * moves through the group the strip shows instead of the windows drawn
+   * beneath the strip. Either way the strip's highlight follows the focus.
    * Returns whether the focus changed (`false` with fewer than two windows
-   * under the point, or with nothing mounted).
+   * in the group, or with nothing mounted).
    */
   cycleAt(point: Point, direction: CycleDirection): boolean;
+  /**
+   * Track the pointer at `point` (stage coordinates) for the cycle strip.
+   * With two or more windows drawn under the point, shows them as a strip
+   * of thumbnails along the bottom of the depth view, frontmost first, with
+   * the focused one highlighted, replacing any group shown before. Hovering
+   * never hides the strip: a point over fewer than two windows, within the
+   * group already shown, or on the strip itself changes nothing. The strip
+   * goes away only when the overlay closes. A no-op with nothing mounted or
+   * while closing.
+   */
+  hoverAt(point: Point): void;
   /** Cheap state snapshot for the D-Bus Inspect endpoint. */
   snapshot(): WindowMirrorSnapshot;
 }

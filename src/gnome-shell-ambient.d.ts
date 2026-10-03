@@ -13,6 +13,7 @@
 /// <reference types="@girs/clutter-18/clutter-18-ambient" />
 /// <reference types="@girs/st-18/st-18-ambient" />
 /// <reference types="@girs/meta-18/meta-18-ambient" />
+/// <reference types="@girs/shell-18/shell-18-ambient" />
 /// <reference types="@girs/gnome-shell/dist/extensions/global" />
 
 declare module 'resource:///org/gnome/shell/extensions/extension.js' {
@@ -50,6 +51,16 @@ declare module 'gi://St' {
 declare module 'gi://Meta' {
   export * from '@girs/meta-18/meta-18';
   export { default } from '@girs/meta-18/meta-18';
+}
+
+declare module 'gi://Shell' {
+  export * from '@girs/shell-18/shell-18';
+  export { default } from '@girs/shell-18/shell-18';
+}
+
+declare module 'gi://Pango' {
+  export * from '@girs/pango-1.0/pango-1.0';
+  export { default } from '@girs/pango-1.0/pango-1.0';
 }
 
 // Global console for logging (GNOME Shell provides this at runtime).

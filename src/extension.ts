@@ -7,6 +7,7 @@ import { DBusInspector } from './libs/inspector/index.js';
 import { DBusReloader } from './libs/reloader/index.js';
 import { safeDisable } from './libs/safe-disable.js';
 import { GnomeModalGrab } from './libs/shell/gnome-modal-grab.js';
+import { CycleStrip } from './ui/overlay/cycle-strip.js';
 import { GnomeRealWindows } from './ui/overlay/gnome-real-windows.js';
 import { GnomeWindowMirror } from './ui/overlay/gnome-window-mirror.js';
 import { HotCornerTrigger } from './ui/overlay/hot-corner-trigger.js';
@@ -34,7 +35,8 @@ export default class ZattoExtension extends Extension {
     const actor = new OverlayActor();
     const modalGrab = new GnomeModalGrab(() => actor.getActor());
     const hotCorner = new HotCornerTrigger();
-    const windowMirror = new GnomeWindowMirror(() => actor.getCloneContainer());
+    const cycleStrip = new CycleStrip(() => actor.getChromeContainer());
+    const windowMirror = new GnomeWindowMirror(() => actor.getCloneContainer(), cycleStrip);
     const realWindows = new GnomeRealWindows();
     this.realWindows = realWindows;
     this.overlayController = new OverlayController(

@@ -29,10 +29,15 @@
  * Mutter emulates the one kind from the other, so, like gnome-shell's own
  * scroll handlers, events flagged as pointer-emulated are ignored (but
  * still consumed) to avoid counting one notch twice.
+ *
+ * Every pointer motion while the grab is held is reported, in stage
+ * coordinates, wherever it happens (the top bar and the dock included),
+ * and propagates untouched.
  */
 
 import Clutter from 'gi://Clutter';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import type { Point } from '../../ui/overlay/depth-cycle.js';
 import type { ModalGrabPort, ScrollStep } from '../../ui/overlay/ports.js';
 import { type ScrollStepDirection, ScrollStepper } from './scroll-stepper.js';
 
@@ -42,6 +47,7 @@ export class GnomeModalGrab implements ModalGrabPort {
   private escHandler: (() => void) | null = null;
   private outsidePressHandler: (() => void) | null = null;
   private scrollHandler: ((scroll: ScrollStep) => void) | null = null;
+  private motionHandler: ((point: Point) => void) | null = null;
   private readonly scrollStepper = new ScrollStepper();
 
   constructor(private readonly getOverlayActor: () => Clutter.Actor | null) {}
@@ -56,6 +62,10 @@ export class GnomeModalGrab implements ModalGrabPort {
 
   onScroll(handler: (scroll: ScrollStep) => void): void {
     this.scrollHandler = handler;
+  }
+
+  onMotion(handler: (point: Point) => void): void {
+    this.motionHandler = handler;
   }
 
   acquire(): boolean {
@@ -108,6 +118,11 @@ export class GnomeModalGrab implements ModalGrabPort {
       // Close the overlay, but let the press reach its target so a click
       // on the dock or the top bar does what it does on the desktop.
       this.outsidePressHandler?.();
+    }
+    if (type === Clutter.EventType.MOTION) {
+      const [x, y] = event.get_coords();
+      this.motionHandler?.({ x, y });
+      return Clutter.EVENT_PROPAGATE;
     }
     if (type === Clutter.EventType.SCROLL && this.isInsideOverlay(event)) {
       this.onScrollEvent(event);

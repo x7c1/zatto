@@ -16,6 +16,9 @@
  * returned by {@link OverlayActor.getCloneContainer}. The clone container
  * uses `Clutter.FixedLayout` so the window mirror can position each clone
  * by absolute work-area-relative coordinates (see `gnome-window-mirror.ts`).
+ * A second, untransformed container above it, returned by
+ * {@link OverlayActor.getChromeContainer}, hosts the decorations drawn over
+ * the clones (the cycle strip, see `cycle-strip.ts`).
  */
 
 import Clutter from 'gi://Clutter';
@@ -35,6 +38,7 @@ export class OverlayActor implements OverlayActorPort {
   private dimmer: St.Widget | null = null;
   private shade: St.Widget | null = null;
   private cloneContainer: St.Widget | null = null;
+  private chromeContainer: St.Widget | null = null;
   private mounted = false;
   private visible = false;
 
@@ -84,17 +88,28 @@ export class OverlayActor implements OverlayActorPort {
     cloneContainer.add_style_class_name('zatto-overlay-clones');
     dimmer.add_child(cloneContainer);
 
+    // Decorations drawn over the clones. Separate from the clone container
+    // so they are not scaled with it and their own reactive children do not
+    // change the clones' input routing.
+    const chromeContainer = new St.Widget({
+      reactive: false,
+      layout_manager: new Clutter.FixedLayout(),
+    });
+    chromeContainer.add_style_class_name('zatto-overlay-chrome');
+    dimmer.add_child(chromeContainer);
+
     safeAddChrome(dimmer);
     this.dimmer = dimmer;
     this.shade = shade;
     this.cloneContainer = cloneContainer;
+    this.chromeContainer = chromeContainer;
     this.fitGeometry(workArea);
     this.mounted = true;
   }
 
   /**
-   * Place the dimmer on the primary monitor's work area and the shade and
-   * the clone container at its origin, covering it. The work area is
+   * Place the dimmer on the primary monitor's work area and the shade, the
+   * clone container and the chrome container at its origin, covering it. The work area is
    * re-read on every `show()` rather than kept from `mount()`: it changes
    * after the extension is enabled whenever the dock or the panel changes
    * the space it reserves (e.g. a dock that sets its strut late at login,
@@ -102,13 +117,13 @@ export class OverlayActor implements OverlayActorPort {
    * open, so a stale container would put the clones off their windows.
    */
   private fitGeometry(workArea: Rect): void {
-    const { dimmer, shade, cloneContainer } = this;
-    if (dimmer === null || shade === null || cloneContainer === null) {
+    const { dimmer, shade, cloneContainer, chromeContainer } = this;
+    if (dimmer === null || shade === null || cloneContainer === null || chromeContainer === null) {
       return;
     }
     dimmer.set_position(workArea.x, workArea.y);
     dimmer.set_size(workArea.width, workArea.height);
-    for (const child of [shade, cloneContainer]) {
+    for (const child of [shade, cloneContainer, chromeContainer]) {
       child.set_position(0, 0);
       child.set_size(workArea.width, workArea.height);
     }
@@ -182,6 +197,15 @@ export class OverlayActor implements OverlayActorPort {
     return this.cloneContainer;
   }
 
+  /**
+   * The container for decorations drawn over the clones, such as the cycle
+   * strip. It covers the work area like the clone container but is never
+   * transformed, and is not itself reactive.
+   */
+  getChromeContainer(): St.Widget | null {
+    return this.chromeContainer;
+  }
+
   /** Unmount and destroy. Idempotent. */
   destroy(): void {
     // A pending fade's completion must not touch a destroyed dimmer.
@@ -196,6 +220,7 @@ export class OverlayActor implements OverlayActorPort {
       this.dimmer = null;
     }
     this.cloneContainer = null;
+    this.chromeContainer = null;
     this.mounted = false;
     this.visible = false;
   }

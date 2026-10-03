@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cycleFocus, windowsUnder } from './depth-cycle.js';
+import { cycleFocus, focusWithin, windowsUnder } from './depth-cycle.js';
 import type { DepthViewLayout, Rect } from './depth-layout.js';
 
 function frame(x: number, y: number, width: number, height: number): Rect {
@@ -111,5 +111,36 @@ describe('cycleFocus', () => {
     expect(cycleFocus([0, 1], null, 'forward')).toBe(0);
     expect(cycleFocus([0, 1], 0, 'forward')).toBe(1);
     expect(cycleFocus([0, 1], 1, 'backward')).toBe(0);
+  });
+});
+
+describe('focusWithin', () => {
+  // Bottom to top: 4 is the deepest, 7 the frontmost under the cursor.
+  const group = [4, 2, 7];
+
+  it('highlights the frontmost member when nothing is focused', () => {
+    expect(focusWithin(group, null)).toBe(0);
+  });
+
+  it('highlights the frontmost member when the focus is not in the group', () => {
+    expect(focusWithin(group, 9)).toBe(0);
+  });
+
+  it('counts positions from the front', () => {
+    expect(focusWithin(group, 7)).toBe(0);
+    expect(focusWithin(group, 2)).toBe(1);
+    expect(focusWithin(group, 4)).toBe(2);
+  });
+
+  it('moves one position right per forward step and left per backward step, wrapping', () => {
+    expect(focusWithin(group, cycleFocus(group, null, 'forward'))).toBe(1);
+    expect(focusWithin(group, cycleFocus(group, null, 'backward'))).toBe(2);
+    let focused: number | null = null;
+    const positions: number[] = [];
+    for (let i = 0; i < group.length; i++) {
+      focused = cycleFocus(group, focused, 'forward');
+      positions.push(focusWithin(group, focused));
+    }
+    expect(positions).toEqual([1, 2, 0]);
   });
 });
