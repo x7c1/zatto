@@ -51,7 +51,7 @@ export class GnomeModalGrab implements ModalGrabPort {
   private grab: Clutter.Grab | null = null;
   private capturedEventId: number | null = null;
   private escHandler: (() => void) | null = null;
-  private outsidePressHandler: (() => void) | null = null;
+  private emptyPressHandler: (() => void) | null = null;
   private scrollHandler: ((scroll: ScrollStep) => void) | null = null;
   private motionHandler: ((point: Point) => void) | null = null;
   private confirmHandler: ((point: Point) => void) | null = null;
@@ -63,8 +63,8 @@ export class GnomeModalGrab implements ModalGrabPort {
     this.escHandler = handler;
   }
 
-  onOutsidePress(handler: () => void): void {
-    this.outsidePressHandler = handler;
+  onEmptyPress(handler: () => void): void {
+    this.emptyPressHandler = handler;
   }
 
   onScroll(handler: (scroll: ScrollStep) => void): void {
@@ -136,13 +136,16 @@ export class GnomeModalGrab implements ModalGrabPort {
         return Clutter.EVENT_STOP;
       }
     }
-    if (
-      (type === Clutter.EventType.BUTTON_PRESS || type === Clutter.EventType.TOUCH_BEGIN) &&
-      !this.isInsideOverlay(event)
-    ) {
-      // Close the overlay, but let the press reach its target so a click
-      // on the dock or the top bar does what it does on the desktop.
-      this.outsidePressHandler?.();
+    if (type === Clutter.EventType.BUTTON_PRESS || type === Clutter.EventType.TOUCH_BEGIN) {
+      // A press on nothing closes the overlay: outside it (and the press
+      // still reaches the dock or the top bar, which do what they do on
+      // the desktop), or on the bare shade, which the reactive dimmer
+      // itself receives when no clone and no strip is under the pointer.
+      const overlay = this.getOverlayActor();
+      const target = global.stage.get_event_actor(event);
+      if (!isInside(overlay, event) || target === overlay) {
+        this.emptyPressHandler?.();
+      }
     }
     if (type === Clutter.EventType.MOTION) {
       const [x, y] = event.get_coords();

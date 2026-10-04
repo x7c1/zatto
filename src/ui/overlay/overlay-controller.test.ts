@@ -77,12 +77,12 @@ describe('OverlayController', () => {
     expect(modalGrab.releaseCount).toBe(1);
   });
 
-  describe('outside press (onOutsidePress)', () => {
+  describe('outside press (onEmptyPress)', () => {
     it('closes the overlay and releases the grab while open', () => {
       const { controller, hotCorner, actor, modalGrab, windowMirror } = setup();
       hotCorner.fireEnter();
 
-      modalGrab.fireOutsidePress();
+      modalGrab.fireEmptyPress();
 
       expect(actor.isVisible()).toBe(false);
       expect(modalGrab.isHeld()).toBe(false);
@@ -97,7 +97,7 @@ describe('OverlayController', () => {
       hotCorner.fireEnter();
       modalGrab.fireEsc();
 
-      modalGrab.fireOutsidePress();
+      modalGrab.fireEmptyPress();
 
       expect(controller.snapshot().overlay.state).toBe('closing');
       expect(windowMirror.unmountCount).toBe(1);
@@ -107,7 +107,7 @@ describe('OverlayController', () => {
     it('does nothing while closed', () => {
       const { controller, actor, modalGrab, windowMirror } = setup();
 
-      modalGrab.fireOutsidePress();
+      modalGrab.fireEmptyPress();
 
       expect(controller.snapshot().overlay.state).toBe('closed');
       expect(actor.isVisible()).toBe(false);
@@ -556,7 +556,7 @@ describe('OverlayController', () => {
       },
       {
         name: 'outside press',
-        close: (env: OpenEnv) => env.modalGrab.fireOutsidePress(),
+        close: (env: OpenEnv) => env.modalGrab.fireEmptyPress(),
       },
       { name: 'Esc', close: (env: OpenEnv) => env.modalGrab.fireEsc() },
       {
@@ -626,7 +626,7 @@ describe('OverlayController', () => {
       advance(500); // well past the debounce window
 
       hotCorner.fireEnter();
-      modalGrab.fireOutsidePress();
+      modalGrab.fireEmptyPress();
       modalGrab.fireEsc();
 
       expect(controller.snapshot().overlay.state).toBe('closing');

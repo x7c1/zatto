@@ -123,9 +123,9 @@ export class OverlayController {
     });
 
     this.modalGrab.onEsc(() => this.fsm.dismiss());
-    // A press on the top bar or the dock closes the overlay and still
-    // reaches its target, as in the Activities Overview.
-    this.modalGrab.onOutsidePress(() => this.fsm.dismiss());
+    // A press on nothing (the top bar, the dock, or the bare shade) closes
+    // the overlay and still reaches its target, as in the Activities Overview.
+    this.modalGrab.onEmptyPress(() => this.fsm.dismiss());
     // Cycling only makes sense once the open has committed: `opening` can
     // still fail and be torn down by abortOpen(), and while closing the
     // clones are on their way back onto the windows in the real order.

@@ -81,7 +81,7 @@ export class FakeModalGrab implements ModalGrabPort {
   acquireShouldFail = false;
   private held = false;
   private escHandler: (() => void) | null = null;
-  private outsidePressHandler: (() => void) | null = null;
+  private emptyPressHandler: (() => void) | null = null;
   private scrollHandler: ((scroll: ScrollStep) => void) | null = null;
   private motionHandler: ((point: Point) => void) | null = null;
   private confirmHandler: ((point: Point) => void) | null = null;
@@ -90,8 +90,8 @@ export class FakeModalGrab implements ModalGrabPort {
     this.escHandler = handler;
   }
 
-  onOutsidePress(handler: () => void): void {
-    this.outsidePressHandler = handler;
+  onEmptyPress(handler: () => void): void {
+    this.emptyPressHandler = handler;
   }
 
   onScroll(handler: (scroll: ScrollStep) => void): void {
@@ -137,8 +137,8 @@ export class FakeModalGrab implements ModalGrabPort {
    * Fires even when no grab is held, so tests can check that the
    * controller itself ignores a stray press while closing or closed.
    */
-  fireOutsidePress(): void {
-    this.outsidePressHandler?.();
+  fireEmptyPress(): void {
+    this.emptyPressHandler?.();
   }
 
   /**

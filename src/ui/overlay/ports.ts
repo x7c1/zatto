@@ -91,12 +91,14 @@ export interface ModalGrabPort {
    */
   onEsc(handler: () => void): void;
   /**
-   * Register the outside-press handler, invoked when a button press or touch
-   * begins outside the overlay (e.g. on the top bar or the dock) while the
-   * grab is held. The press still reaches its target. The port supports
-   * exactly one handler at a time; the most recent registration wins.
+   * Register the empty-press handler, invoked when a button press or touch
+   * begins on nothing the overlay offers while the grab is held: outside
+   * the overlay (e.g. on the top bar or the dock), or on the overlay's bare
+   * shade where no clone and no strip is drawn. The press still reaches its
+   * target. The port supports exactly one handler at a time; the most
+   * recent registration wins.
    */
-  onOutsidePress(handler: () => void): void;
+  onEmptyPress(handler: () => void): void;
   /**
    * Register the step handler, invoked once per {@link ScrollStep}: a
    * notch of a vertical scroll over the overlay, or a Tab (down) or
