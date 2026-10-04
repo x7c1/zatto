@@ -83,3 +83,18 @@ export function cycleFocus(
   const next = (position + step + group.length) % group.length;
   return group[next];
 }
+
+/**
+ * The position in the cycle strip of the thumbnail to highlight.
+ *
+ * `group` is the result of {@link windowsUnder} (indices bottom to top)
+ * and `focused` the index currently focused, or `null`. The strip shows
+ * the group front to back, so position 0 is the frontmost member (the
+ * last entry of `group`). Returns the position of `focused` when it is in
+ * `group`, else 0: like {@link cycleFocus}, the focus is then taken to sit
+ * on the frontmost member.
+ */
+export function focusWithin(group: readonly number[], focused: number | null): number {
+  const found = focused === null ? -1 : group.indexOf(focused);
+  return found === -1 ? 0 : group.length - 1 - found;
+}
