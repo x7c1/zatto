@@ -92,6 +92,19 @@ export class CycleStrip {
   }
 
   /**
+   * The strip position of the thumbnail under `point` (relative to the
+   * container), or `null` when the point misses every thumbnail: the
+   * background, a gap, the title band, or no strip at all.
+   */
+  thumbAt(point: Point): number | null {
+    const rects = this.shown?.thumbRects ?? [];
+    const i = rects.findIndex(
+      (r) => point.x >= r.x && point.x < r.x + r.width && point.y >= r.y && point.y < r.y + r.height
+    );
+    return i === -1 ? null : i;
+  }
+
+  /**
    * Replace whatever is shown with thumbnails of `members` (front to back),
    * framing the one at position `highlighted`, and fade the strip in. A
    * strip that replaces one already shown starts at that one's opacity, so

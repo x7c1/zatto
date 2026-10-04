@@ -150,10 +150,10 @@ export interface WindowMirrorSnapshot {
    */
   readonly lastActivatedAt: number | null;
   /**
-   * Epoch ms of the most recent {@link WindowMirrorPort.cycleAt} call that
-   * moved the focus, or `null` if none yet. Lets an on-hardware check tell
-   * a scroll that never reached the mirror from one that found nothing to
-   * cycle through.
+   * Epoch ms of the most recent focus move — a {@link WindowMirrorPort.cycleAt}
+   * step or a hover on a strip thumbnail — or `null` if none yet. Lets an
+   * on-hardware check tell a scroll that never reached the mirror from one
+   * that found nothing to cycle through.
    */
   readonly lastCycledAt: number | null;
   /**
@@ -233,8 +233,10 @@ export interface WindowMirrorPort {
    * thumbnails along the bottom of the depth view, frontmost first, with
    * the focused one highlighted, replacing whatever the strip showed
    * before; a point over no window hides the strip. A point within the
-   * group already shown or on the strip itself changes nothing. A no-op
-   * with nothing mounted or while closing.
+   * group already shown changes nothing. On the strip itself, a point on a
+   * thumbnail moves the focus to that window (as {@link cycleAt} would) and
+   * a point elsewhere on the strip changes nothing. A no-op with nothing
+   * mounted or while closing.
    */
   hoverAt(point: Point): void;
   /**
