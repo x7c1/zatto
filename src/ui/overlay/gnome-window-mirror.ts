@@ -105,7 +105,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
    * The group of windows the strip shows ({@link windowsUnder} order), or
    * `null` while it is hidden. Scrolling on the strip cycles this group.
    */
-  private hoverGroup: number[] | null = null;
+  private hoverGroup: readonly number[] | null = null;
   /** The `onActivated` of the current mount, run by a thumbnail click too. */
   private onActivated: (() => void) | null = null;
   /** Whether a close ease has started; the focus no longer moves. */
@@ -264,7 +264,23 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     if (next === this.focused) {
       return false;
     }
+    this.focusOn(next, group, container, layout);
+    return true;
+  }
 
+  /**
+   * Move the focus to the clone at `index`: raise it and ease it to the
+   * focused opacity, ease the previously focused clone back and return it
+   * to its mount position, and point the strip's highlight at it. `group`
+   * is the group the move happened in, so the strip can be shown for it if
+   * no motion has reached the strip yet.
+   */
+  private focusOn(
+    index: number,
+    group: readonly number[],
+    container: St.Widget,
+    layout: DepthViewLayout
+  ): void {
     const animate = shouldAnimate();
     const setOpacity = (clone: Clutter.Clone, opacity: number) => {
       if (animate) {
@@ -281,11 +297,11 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       this.restoreMountPosition(container, previous);
       setOpacity(clone, layout.clones[previous]?.opacity ?? 255);
     }
-    const { clone } = this.clones[next];
+    const { clone } = this.clones[index];
     container.set_child_above_sibling(clone, null);
     setOpacity(clone, 255);
 
-    this.focused = next;
+    this.focused = index;
     this.lastCycledAt = Date.now();
     // Normally the strip already shows this group, since the pointer had
     // to move here (or is on the strip); if no motion was reported yet,
@@ -293,11 +309,10 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     // itself, the array the strip was built from, so it cannot drift.
     const shown = this.hoverGroup;
     if (shown !== null && sameMembers(shown, group)) {
-      this.strip.setHighlight(focusWithin(shown, next));
+      this.strip.setHighlight(focusWithin(shown, index));
     } else {
       this.showStrip(group);
     }
-    return true;
   }
 
   hoverAt(point: Point): void {
@@ -309,6 +324,20 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     // windows beneath it: keep the strip as it is, or it would be rebuilt
     // for those windows as the pointer reaches a thumbnail.
     if (this.strip.covers(this.toWorkArea(point))) {
+      // Pointing at a thumbnail focuses its window, so the pointer can pick
+      // along the strip as the wheel does; the background, the gaps and
+      // the title band leave the focus alone.
+      const position = this.strip.thumbAt(this.toWorkArea(point));
+      const shown = this.hoverGroup;
+      if (position !== null && shown !== null) {
+        const index = shown[shown.length - 1 - position];
+        if (index !== undefined && index !== this.focused) {
+          const container = this.getContainer();
+          if (container !== null) {
+            this.focusOn(index, shown, container, layout);
+          }
+        }
+      }
       return;
     }
     // The strip names what a click or Enter would pick here: any window
@@ -421,7 +450,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
    * Show `group` ({@link windowsUnder} order) in the strip, front to back,
    * highlighting the focused member, and remember it as the hover group.
    */
-  private showStrip(group: number[]): void {
+  private showStrip(group: readonly number[]): void {
     this.hoverGroup = group;
     const members: CycleStripMember[] = [...group].reverse().map((index) => {
       const { clone, win, rect, source } = this.clones[index];

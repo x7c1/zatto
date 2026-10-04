@@ -155,6 +155,9 @@ positions and the cycling behaviour from the previous change.
 - Each thumbnail carries its app icon centred on its top edge
   (`iconSizePx`), the Activities Overview's window-preview icon moved
   from the bottom edge to the top.
+- Pointing at a thumbnail moves the focus to its window, as a wheel step
+  would, so the pointer can pick along the strip; the background, the
+  gaps and the title band leave the focus alone.
 - The title moved inside the strip: a `titleHeightPx` band below the
   thumbnails, within the same dark background, so it reads against the
   background whatever lies behind the strip and no longer touches the
