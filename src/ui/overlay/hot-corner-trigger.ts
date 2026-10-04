@@ -28,18 +28,21 @@
  * `enter-event`. We mirror Shell's own `Layout.HotCorner` guard: while the
  * Overview is active, ignore `enter-event` entirely.
  *
- * Stacking: chrome actors stack in the order they are added, and a dock
- * that reaches the corner covers the trigger whenever it is added after
- * it. Ubuntu Dock removes and re-adds itself each time its "fixed" mode is
- * toggled, so the trigger is moved back to the top of the chrome every
- * time an actor is added to `uiGroup`. In exchange, the dock's own 5x5 px
- * at the corner no longer receive clicks.
+ * Stacking: the trigger is added as top chrome (`addTopChrome`), above
+ * everything `addChrome` places, popups included. A dock that reaches the
+ * corner is ordinary chrome, and Ubuntu Dock removes and re-adds itself
+ * each time its "fixed" mode is toggled; `addChrome` restacks the re-added
+ * dock to just below `top_window_group` after the `child-added` signal has
+ * fired, so re-raising the trigger from that signal lost the race and the
+ * fixed dock ended up covering the corner. Top chrome stays above the
+ * dock whatever it does. In exchange, the 5x5 px at the corner receive no
+ * clicks, whether a dock or a popup is drawn there.
  */
 
 import Clutter from 'gi://Clutter';
 import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
-import { safeAddChrome } from '../../libs/shell/safe-add-chrome.js';
+import { safeAddTopChrome } from '../../libs/shell/safe-add-chrome.js';
 import type { HotCornerPort } from './ports.js';
 
 /**
@@ -55,7 +58,6 @@ export class HotCornerTrigger implements HotCornerPort {
   private suppressed = false;
   private overviewShowingId: number | null = null;
   private overviewHiddenId: number | null = null;
-  private childAddedId: number | null = null;
 
   /** Register the single enter handler. Must be set before {@link enable}. */
   onEnter(handler: () => void): void {
@@ -91,13 +93,8 @@ export class HotCornerTrigger implements HotCornerPort {
       return Clutter.EVENT_PROPAGATE;
     });
 
-    safeAddChrome(actor);
+    safeAddTopChrome(actor);
     this.actor = actor;
-    this.childAddedId = Main.layoutManager.uiGroup.connect('child-added', (_group, child) => {
-      if (child !== actor) {
-        this.raise(actor);
-      }
-    });
 
     this.overviewShowingId = Main.overview.connect('showing', () => {
       this.suppressed = true;
@@ -109,10 +106,6 @@ export class HotCornerTrigger implements HotCornerPort {
 
   /** Tear down the corner actor. Idempotent. */
   disable(): void {
-    if (this.childAddedId !== null) {
-      Main.layoutManager.uiGroup.disconnect(this.childAddedId);
-      this.childAddedId = null;
-    }
     if (this.overviewShowingId !== null) {
       Main.overview.disconnect(this.overviewShowingId);
       this.overviewShowingId = null;
@@ -131,19 +124,6 @@ export class HotCornerTrigger implements HotCornerPort {
       Main.layoutManager.removeChrome(this.actor);
       this.actor.destroy();
       this.actor = null;
-    }
-  }
-
-  /**
-   * Put the trigger back on top of the chrome, where `addChrome()` places
-   * a new actor: just below `top_window_group`, so popups still cover it.
-   */
-  private raise(actor: St.Widget): void {
-    const uiGroup = Main.layoutManager.uiGroup;
-    if (uiGroup.contains(global.top_window_group)) {
-      uiGroup.set_child_below_sibling(actor, global.top_window_group);
-    } else {
-      uiGroup.set_child_above_sibling(actor, null);
     }
   }
 }

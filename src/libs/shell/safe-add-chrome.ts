@@ -29,3 +29,16 @@ export function safeAddChrome(actor: Clutter.Actor, options?: AddChromeOptions):
     throw error;
   }
 }
+
+/**
+ * Like {@link safeAddChrome}, but through `addTopChrome`, which keeps
+ * `actor` above everything `addChrome` adds, popups included.
+ */
+export function safeAddTopChrome(actor: Clutter.Actor, options?: AddChromeOptions): void {
+  try {
+    Main.layoutManager.addTopChrome(actor, options);
+  } catch (error) {
+    actor.destroy();
+    throw error;
+  }
+}
