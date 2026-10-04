@@ -155,18 +155,19 @@ export class CycleStrip {
 
     // The title sits in a bin filling the title band, which centres the
     // text; it reads against the strip's background whatever is behind.
+    // The label carries its own alignment, so the bin centres it in the
+    // band both ways instead of stretching it to the band's height.
     const label = new St.Label({
       reactive: false,
       style: `${TITLE_STYLE} max-width: ${Math.round(layout.title.width)}px;`,
+      x_align: Clutter.ActorAlign.CENTER,
+      y_align: Clutter.ActorAlign.CENTER,
+      x_expand: false,
+      y_expand: false,
     });
     label.clutter_text.ellipsize = Pango.EllipsizeMode.END;
     label.clutter_text.single_line_mode = true;
-    const titleBin = new St.Bin({
-      reactive: false,
-      x_align: Clutter.ActorAlign.CENTER,
-      y_align: Clutter.ActorAlign.CENTER,
-      child: label,
-    });
+    const titleBin = new St.Bin({ reactive: false, child: label });
     setRect(titleBin, layout.title);
     root.add_child(titleBin);
 
