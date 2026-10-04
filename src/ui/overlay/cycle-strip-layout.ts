@@ -8,11 +8,12 @@
  * inside a background `paddingPx` larger on every side, plus half an
  * icon at the top: each thumbnail carries its app icon centred on its
  * top edge, like the Activities Overview's window previews carry theirs
- * on the bottom edge. Below the thumbnails, `paddingPx` further down and
+ * on the bottom edge. Below the thumbnails, `titleGapPx` further down and
  * still inside the background, a `titleHeightPx` band holds the
  * highlighted window's title, so the title reads against the background
- * whatever lies behind the strip; half a padding closes the strip under
- * it, since text needs less breathing room than a picture. The
+ * whatever lies behind the strip; `titleBottomPx` closes the strip under
+ * it, less than the gap above, since text needs less breathing room than
+ * a picture. The
  * strip's bottom edge sits `bottomMarginPx` above the bottom of the work
  * area, and the strip is centred horizontally. A row that would not fit the work area width minus
  * `bottomMarginPx` on either side is scaled down uniformly (the
@@ -45,12 +46,16 @@ export interface CycleStripTuning {
   readonly bottomMarginPx: number;
   /** Side of the square app icon centred on each thumbnail's top edge, in px. */
   readonly iconSizePx: number;
+  /** Space between the thumbnails and the title band, in px. */
+  readonly titleGapPx: number;
   /**
    * Height of the band inside the background, below the thumbnails, that
    * holds the highlighted window's title, in px; the title is centred in
    * it.
    */
   readonly titleHeightPx: number;
+  /** Space between the title band and the strip's bottom edge, in px. */
+  readonly titleBottomPx: number;
   /**
    * Duration of the strip's fade in and out, in ms. Not an input to
    * {@link computeStripLayout}; it lives here so all the strip's knobs sit
@@ -65,7 +70,9 @@ export const CYCLE_STRIP_TUNING: CycleStripTuning = {
   paddingPx: 12,
   bottomMarginPx: 24,
   iconSizePx: 32,
+  titleGapPx: 16,
   titleHeightPx: 20,
+  titleBottomPx: 10,
   fadeMs: 150,
 };
 
@@ -90,8 +97,16 @@ export function computeStripLayout(
   area: Size,
   tuning: CycleStripTuning
 ): StripLayout {
-  const { thumbHeightPx, thumbGapPx, paddingPx, bottomMarginPx, iconSizePx, titleHeightPx } =
-    tuning;
+  const {
+    thumbHeightPx,
+    thumbGapPx,
+    paddingPx,
+    bottomMarginPx,
+    iconSizePx,
+    titleGapPx,
+    titleHeightPx,
+    titleBottomPx,
+  } = tuning;
   const bottom = area.height - bottomMarginPx;
   if (sizes.length === 0) {
     return {
@@ -113,10 +128,9 @@ export function computeStripLayout(
   const thumbHeight = thumbHeightPx * scale;
   const stripWidth = totalWidth * scale + fixed;
   // Room above the thumbnails for the half of each icon that sticks out,
-  // the title band a padding below them, and half a padding under the
-  // title.
+  // then the title band and its own spacing below them.
   const top = paddingPx + iconSizePx / 2;
-  const stripHeight = top + thumbHeight + paddingPx + titleHeightPx + paddingPx / 2;
+  const stripHeight = top + thumbHeight + titleGapPx + titleHeightPx + titleBottomPx;
   const strip = {
     x: (area.width - stripWidth) / 2,
     y: bottom - stripHeight,
@@ -139,7 +153,7 @@ export function computeStripLayout(
   }));
   const title = {
     x: strip.x + paddingPx,
-    y: strip.y + top + thumbHeight + paddingPx,
+    y: strip.y + top + thumbHeight + titleGapPx,
     width: stripWidth - 2 * paddingPx,
     height: titleHeightPx,
   };
