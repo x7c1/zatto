@@ -11,7 +11,8 @@
  * on the bottom edge. Below the thumbnails, `paddingPx` further down and
  * still inside the background, a `titleHeightPx` band holds the
  * highlighted window's title, so the title reads against the background
- * whatever lies behind the strip. The
+ * whatever lies behind the strip; half a padding closes the strip under
+ * it, since text needs less breathing room than a picture. The
  * strip's bottom edge sits `bottomMarginPx` above the bottom of the work
  * area, and the strip is centred horizontally. A row that would not fit the work area width minus
  * `bottomMarginPx` on either side is scaled down uniformly (the
@@ -64,7 +65,7 @@ export const CYCLE_STRIP_TUNING: CycleStripTuning = {
   paddingPx: 12,
   bottomMarginPx: 24,
   iconSizePx: 32,
-  titleHeightPx: 24,
+  titleHeightPx: 20,
   fadeMs: 150,
 };
 
@@ -112,9 +113,10 @@ export function computeStripLayout(
   const thumbHeight = thumbHeightPx * scale;
   const stripWidth = totalWidth * scale + fixed;
   // Room above the thumbnails for the half of each icon that sticks out,
-  // and the title band below them, a padding away, all inside the padding.
+  // the title band a padding below them, and half a padding under the
+  // title.
   const top = paddingPx + iconSizePx / 2;
-  const stripHeight = top + thumbHeight + paddingPx + titleHeightPx + paddingPx;
+  const stripHeight = top + thumbHeight + paddingPx + titleHeightPx + paddingPx / 2;
   const strip = {
     x: (area.width - stripWidth) / 2,
     y: bottom - stripHeight,

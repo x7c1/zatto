@@ -30,7 +30,7 @@ const EASE_MODE = Clutter.AnimationMode.EASE_OUT_QUAD;
 
 const BACKGROUND_STYLE = 'background-color: rgba(30, 30, 30, 0.85); border-radius: 12px;';
 const HIGHLIGHT_STYLE = 'background-color: rgba(255, 255, 255, 0.2); border-radius: 10px;';
-const TITLE_STYLE = 'color: white; font-weight: bold;';
+const TITLE_STYLE = 'color: white;';
 /** How far the highlight extends beyond the highlighted thumbnail and its icon, in px. */
 const HIGHLIGHT_PAD_PX = 6;
 
