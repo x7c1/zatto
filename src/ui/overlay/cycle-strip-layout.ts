@@ -8,9 +8,10 @@
  * inside a background `paddingPx` larger on every side, plus half an
  * icon at the top: each thumbnail carries its app icon centred on its
  * top edge, like the Activities Overview's window previews carry theirs
- * on the bottom edge. Below the thumbnails, still inside the background,
- * a `titleHeightPx` band holds the highlighted window's title, so the
- * title reads against the background whatever lies behind the strip. The
+ * on the bottom edge. Below the thumbnails, `paddingPx` further down and
+ * still inside the background, a `titleHeightPx` band holds the
+ * highlighted window's title, so the title reads against the background
+ * whatever lies behind the strip. The
  * strip's bottom edge sits `bottomMarginPx` above the bottom of the work
  * area, and the strip is centred horizontally. A row that would not fit the work area width minus
  * `bottomMarginPx` on either side is scaled down uniformly (the
@@ -63,7 +64,7 @@ export const CYCLE_STRIP_TUNING: CycleStripTuning = {
   paddingPx: 12,
   bottomMarginPx: 24,
   iconSizePx: 32,
-  titleHeightPx: 32,
+  titleHeightPx: 24,
   fadeMs: 150,
 };
 
@@ -111,9 +112,9 @@ export function computeStripLayout(
   const thumbHeight = thumbHeightPx * scale;
   const stripWidth = totalWidth * scale + fixed;
   // Room above the thumbnails for the half of each icon that sticks out,
-  // and the title band below them, all inside the padding.
+  // and the title band below them, a padding away, all inside the padding.
   const top = paddingPx + iconSizePx / 2;
-  const stripHeight = top + thumbHeight + titleHeightPx + paddingPx;
+  const stripHeight = top + thumbHeight + paddingPx + titleHeightPx + paddingPx;
   const strip = {
     x: (area.width - stripWidth) / 2,
     y: bottom - stripHeight,
@@ -136,7 +137,7 @@ export function computeStripLayout(
   }));
   const title = {
     x: strip.x + paddingPx,
-    y: strip.y + top + thumbHeight,
+    y: strip.y + top + thumbHeight + paddingPx,
     width: stripWidth - 2 * paddingPx,
     height: titleHeightPx,
   };
