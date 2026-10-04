@@ -4,7 +4,7 @@
  * Unlike the pure FSM tests in `overlay-state-machine.test.ts`, these wire
  * the controller against fake hot-corner / overlay-actor / modal-grab
  * implementations and assert the cross-port behavior the controller is
- * responsible for: visibility, grab lifecycle, Esc and outside-press
+ * responsible for: visibility, grab lifecycle, Esc and empty-press
  * handling, debounce, and hiding / showing the real windows around the
  * clone transitions.
  */
@@ -77,7 +77,7 @@ describe('OverlayController', () => {
     expect(modalGrab.releaseCount).toBe(1);
   });
 
-  describe('outside press (onEmptyPress)', () => {
+  describe('empty press (onEmptyPress)', () => {
     it('closes the overlay and releases the grab while open', () => {
       const { controller, hotCorner, actor, modalGrab, windowMirror } = setup();
       hotCorner.fireEnter();
@@ -555,7 +555,7 @@ describe('OverlayController', () => {
         close: (env: OpenEnv) => env.hotCorner.fireEnter(),
       },
       {
-        name: 'outside press',
+        name: 'empty press',
         close: (env: OpenEnv) => env.modalGrab.fireEmptyPress(),
       },
       { name: 'Esc', close: (env: OpenEnv) => env.modalGrab.fireEsc() },
