@@ -33,10 +33,9 @@ the window the focus sits on carries an accent frame and its title is
 written under the strip. Each scroll notch moves the frame one thumbnail
 to the right (`forward`) or left (`backward`), wrapping, in step with the
 large clone that turns opaque. The user sees at a glance how many notches
-the window they want is away. Once shown, the strip stays: moving the
-cursor over an empty spot changes nothing, moving it onto other windows
-rebuilds the strip for them, and the strip goes away when the overlay
-closes. It is drawn over
+the window they want is away. The strip follows the cursor: moving it
+onto other windows rebuilds the strip for them, moving it onto empty
+desktop hides the strip, and closing the overlay hides it too. It is drawn over
 the clones, so the cursor can travel from the overlap down to the strip
 and click a thumbnail, which raises that window and closes the overlay
 like clicking the large clone. Scrolling while the cursor is on the strip
@@ -97,13 +96,11 @@ positions and the cycling behaviour from the previous change.
   not on the windows beneath; `CycleStrip.covers(point)` answers this).
   Otherwise it computes the group with `windowsUnder` against the mount
   layout and compares it with the group shown last time. With no member
-  it does nothing — the strip, if shown, stays as it is. With a changed
-  membership of one or more it shows the strip for the new group, in
-  front-to-back order (the reverse of `windowsUnder`'s order),
-  highlighting `focusWithin(group, focused)`. With the same membership it
-  does nothing. (Cycling still needs two or more: `cycleAt` is
-  unchanged.) The strip is never hidden by hovering; only closing hides
-  it. `cycleAt` keeps its behaviour for a point on the clones and, when it
+  it hides the strip. With a changed membership of one or more it shows
+  the strip for the new group, in front-to-back order (the reverse of
+  `windowsUnder`'s order), highlighting `focusWithin(group, focused)`.
+  With the same membership it does nothing. (Cycling still needs two or
+  more: `cycleAt` is unchanged.) `cycleAt` keeps its behaviour for a point on the clones and, when it
   moves the focus, tells the strip the new highlight position; for a
   point on the strip it cycles the strip's group (the hover group shown)
   instead of the clones beneath, so scrolling while the cursor rests on
@@ -198,11 +195,11 @@ keyboard navigation of the strip, and the touchpad pace factor.
       scroll-down notch moves the highlight one thumbnail to the right and
       wraps, in step with the large clone that comes forward; scroll-up
       reverses it.
-- [ ] Moving the cursor to a spot with no window leaves the strip as it
-      is; moving it onto a single window shows that window alone; moving
-      it to another overlap shows that group's thumbnails; carrying the
-      cursor from the overlap down onto the strip keeps it up, and
-      scrolling there walks the thumbnails.
+- [ ] Moving the cursor onto empty desktop hides the strip; moving it
+      onto a single window shows that window alone; moving it to another
+      overlap shows that group's thumbnails; carrying the cursor from the
+      overlap down onto the strip over windows keeps it up, and scrolling
+      there walks the thumbnails.
 - [ ] Clicking a thumbnail raises that window and closes the overlay;
       Esc still closes with the desktop unchanged and the strip gone; the
       top bar and the dock remain usable while the strip is shown.
