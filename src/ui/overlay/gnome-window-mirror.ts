@@ -311,13 +311,13 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     if (this.strip.covers(this.toWorkArea(point))) {
       return;
     }
-    // Hovering never hides the strip: on its way down to the strip the
-    // pointer crosses empty spots, and the strip must still be there when
-    // it arrives. Any window under the pointer, alone or in an overlap,
-    // replaces what the strip shows, so the strip always names what a
-    // click or Enter would pick here.
+    // The strip names what a click or Enter would pick here: any window
+    // under the pointer, alone or in an overlap, replaces what it shows,
+    // and empty desktop under the pointer takes it down.
     const group = this.groupAt(point, layout);
     if (group.length === 0) {
+      this.hoverGroup = null;
+      this.strip.hide();
       return;
     }
     if (this.hoverGroup !== null && sameMembers(this.hoverGroup, group)) {
