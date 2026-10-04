@@ -91,18 +91,22 @@ export interface ModalGrabPort {
    */
   onEsc(handler: () => void): void;
   /**
-   * Register the outside-press handler, invoked when a button press or touch
-   * begins outside the overlay (e.g. on the top bar or the dock) while the
-   * grab is held. The press still reaches its target. The port supports
-   * exactly one handler at a time; the most recent registration wins.
+   * Register the empty-press handler, invoked when a button press or touch
+   * begins on nothing the overlay offers while the grab is held: outside
+   * the overlay (e.g. on the top bar or the dock), or on the overlay's bare
+   * shade where no clone and no strip is drawn. The press still reaches its
+   * target. The port supports exactly one handler at a time; the most
+   * recent registration wins.
    */
-  onOutsidePress(handler: () => void): void;
+  onEmptyPress(handler: () => void): void;
   /**
-   * Register the scroll handler, invoked once per {@link ScrollStep} of a
-   * vertical scroll over the overlay while the grab is held. Such a scroll
-   * is consumed; a scroll outside the overlay (top bar, dock) reaches its
-   * target and does not invoke the handler. The port supports exactly one
-   * handler at a time; the most recent registration wins.
+   * Register the step handler, invoked once per {@link ScrollStep}: a
+   * notch of a vertical scroll over the overlay, or a Tab (down) or
+   * Shift+Tab (up) press anywhere, reported at the pointer's position,
+   * while the grab is held. Both are consumed; a scroll outside the overlay
+   * (top bar, dock) reaches its target and does not invoke the handler. The
+   * port supports exactly one handler at a time; the most recent
+   * registration wins.
    */
   onScroll(handler: (scroll: ScrollStep) => void): void;
   /**
@@ -113,6 +117,13 @@ export interface ModalGrabPort {
    * time; the most recent registration wins.
    */
   onMotion(handler: (point: Point) => void): void;
+  /**
+   * Register the confirm handler, invoked with the pointer position in
+   * stage coordinates when Enter is pressed while the grab is held. The key
+   * is consumed. The port supports exactly one handler at a time; the most
+   * recent registration wins.
+   */
+  onConfirm(handler: (point: Point) => void): void;
   /**
    * Acquire the modal grab. Returns whether the grab is now held — a `false`
    * return means the controller should treat the open as having failed and
@@ -228,6 +239,15 @@ export interface WindowMirrorPort {
    * mounted or while closing.
    */
   hoverAt(point: Point): void;
+  /**
+   * Raise the window a click at `point` would pick and run the mount's
+   * `onActivated`, as a clone click does: the focused window when the
+   * focus is set, otherwise the frontmost window drawn under `point` (the
+   * strip's frontmost member when `point` lies on the strip). Returns
+   * whether a window was activated; `false` with nothing under the point,
+   * nothing mounted, or while closing.
+   */
+  activateAt(point: Point): boolean;
   /** Cheap state snapshot for the D-Bus Inspect endpoint. */
   snapshot(): WindowMirrorSnapshot;
 }
