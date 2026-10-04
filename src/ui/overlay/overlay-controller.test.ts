@@ -232,6 +232,7 @@ describe('OverlayController', () => {
           clonedCount: 0,
           lastActivatedAt: null,
           lastCycledAt: null,
+          stripCount: 0,
         },
         realWindows: { hidden: false, lastRestoredAt: 1_000 },
       });
@@ -250,6 +251,7 @@ describe('OverlayController', () => {
           clonedCount: 1,
           lastActivatedAt: null,
           lastCycledAt: null,
+          stripCount: 0,
         },
         realWindows: { hidden: true, lastRestoredAt: 1_000 },
       });
@@ -275,10 +277,12 @@ describe('OverlayController', () => {
       hotCorner.fireEnter();
       windowMirror.cycledAtStamp = 1_700_000_000_750;
       modalGrab.fireScroll({ x: 10, y: 20, direction: 'down' });
+      windowMirror.stripCount = 3;
 
       const snap = controller.snapshot();
       expect(snap.realWindows).toEqual({ hidden: true, lastRestoredAt: 1_000 });
       expect(snap.windowMirror.lastCycledAt).toBe(1_700_000_000_750);
+      expect(snap.windowMirror.stripCount).toBe(3);
       expect(JSON.parse(JSON.stringify(snap))).toEqual(snap);
     });
 
@@ -428,6 +432,57 @@ describe('OverlayController', () => {
 
       expect(controller.snapshot().overlay.state).toBe('open');
       expect(realWindows.calls).toEqual(['restore', 'hide']);
+    });
+  });
+
+  describe('cycle strip (onMotion -> hoverAt)', () => {
+    const point = { x: 640, y: 360 };
+
+    it('forwards every motion to hoverAt while open', () => {
+      const { hotCorner, modalGrab, windowMirror } = setup();
+      hotCorner.fireEnter();
+
+      modalGrab.fireMotion(point);
+      modalGrab.fireMotion({ x: 641, y: 362 });
+
+      expect(windowMirror.hoverCalls).toEqual([point, { x: 641, y: 362 }]);
+    });
+
+    it('drops a motion while closed', () => {
+      const { modalGrab, windowMirror } = setup();
+
+      modalGrab.fireMotion(point);
+
+      expect(windowMirror.hoverCalls).toEqual([]);
+    });
+
+    it('drops a motion while opening', () => {
+      const { controller, hotCorner, modalGrab, windowMirror, realWindows } = setup();
+      const states: string[] = [];
+      // `hide()` runs while the FSM is still in `opening`.
+      realWindows.onCall = (call) => {
+        if (call === 'hide') {
+          states.push(controller.snapshot().overlay.state);
+          modalGrab.fireMotion(point);
+        }
+      };
+
+      hotCorner.fireEnter();
+
+      expect(states).toEqual(['opening']);
+      expect(windowMirror.hoverCalls).toEqual([]);
+    });
+
+    it('drops a motion while closing', () => {
+      const { controller, hotCorner, modalGrab, windowMirror } = setup();
+      windowMirror.deferUnmountDone = true;
+      hotCorner.fireEnter();
+      modalGrab.fireEsc();
+      expect(controller.snapshot().overlay.state).toBe('closing');
+
+      modalGrab.fireMotion(point);
+
+      expect(windowMirror.hoverCalls).toEqual([]);
     });
   });
 

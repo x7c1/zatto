@@ -28,6 +28,13 @@
  * in mount order (with an activated clone on top), so the real windows
  * reappear under clones stacked the way the windows are.
  *
+ * Cycle strip: {@link GnomeWindowMirror.hoverAt} shows the windows drawn
+ * under the pointer in a {@link CycleStrip} and keeps that group as the
+ * hover group; scrolling on the strip cycles the hover group rather than
+ * the clones beneath it, and a thumbnail click activates its window like a
+ * click on its clone. When the strip appears and goes away is specified on
+ * {@link WindowMirrorPort.hoverAt}.
+ *
  * Three Mutter / Clutter API points this mirror sits on top of:
  *
  *   1. `global.get_window_actors()` — enumerate other apps' window actors.
@@ -47,7 +54,14 @@ import type St from 'gi://St';
 import type { ActorEaseParams } from '../../libs/shell/actor-ease.js';
 import { shouldAnimate } from '../../libs/shell/animations.js';
 import { primaryWorkArea } from '../../libs/shell/work-area.js';
-import { type CycleDirection, cycleFocus, type Point, windowsUnder } from './depth-cycle.js';
+import type { CycleStrip, CycleStripMember } from './cycle-strip.js';
+import {
+  type CycleDirection,
+  cycleFocus,
+  focusWithin,
+  type Point,
+  windowsUnder,
+} from './depth-cycle.js';
 import {
   computeDepthLayout,
   DEPTH_VIEW_TUNING,
@@ -67,6 +81,8 @@ interface MountedClone {
   /** Work-area-relative frame rect at mount time; what the layout and hit-testing use. */
   readonly frame: Rect;
   readonly clickHandlerId: number;
+  /** The window actor the clone mirrors; the strip clones it too. */
+  readonly source: Meta.WindowActor;
 }
 
 export class GnomeWindowMirror implements WindowMirrorPort {
@@ -85,6 +101,13 @@ export class GnomeWindowMirror implements WindowMirrorPort {
   private focused: number | null = null;
   /** The clone whose click activated its window, painted on top while closing. */
   private activatedClone: Clutter.Clone | null = null;
+  /**
+   * The group of windows the strip shows ({@link windowsUnder} order), or
+   * `null` while it is hidden. Scrolling on the strip cycles this group.
+   */
+  private hoverGroup: readonly number[] | null = null;
+  /** The `onActivated` of the current mount, run by a thumbnail click too. */
+  private onActivated: (() => void) | null = null;
   /** Whether a close ease has started; the focus no longer moves. */
   private closing = false;
   /** `onDone` callbacks of animated closes whose ease has not landed yet. */
@@ -103,7 +126,9 @@ export class GnomeWindowMirror implements WindowMirrorPort {
      * until `mount()` time and avoids holding a stale reference across
      * teardown.
      */
-    private readonly getContainer: () => St.Widget | null
+    private readonly getContainer: () => St.Widget | null,
+    /** The strip of thumbnails of the windows under the pointer. */
+    private readonly strip: CycleStrip
   ) {}
 
   mount(onActivated: () => void): boolean {
@@ -129,6 +154,9 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     this.activatedClone = null;
     this.closing = false;
     this.focused = null;
+    this.hoverGroup = null;
+    this.strip.destroy();
+    this.onActivated = onActivated;
 
     // Bottom-to-top, as `global.get_window_actors()` returns them. Clutter
     // paints children in insertion order and does not depth-sort, so the
@@ -176,17 +204,12 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       clone.opacity = 255;
 
       const clickHandlerId = clone.connect('button-press-event', () => {
-        // The close paints the chosen clone on top while it eases back,
-        // matching the stacking the real windows will have when they
-        // reappear.
-        this.activatedClone = clone;
-        this.activateWindow(win);
-        onActivated();
+        this.activateClone(clone, win);
         return Clutter.EVENT_STOP;
       });
 
       container.add_child(clone);
-      this.clones.push({ clone, win, rect, frame, clickHandlerId });
+      this.clones.push({ clone, win, rect, frame, clickHandlerId, source: actor });
 
       const placement = layout.clones[index];
       const target = {
@@ -230,20 +253,34 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       return false;
     }
 
-    const local = { x: point.x - this.workAreaOrigin.x, y: point.y - this.workAreaOrigin.y };
-    const group = windowsUnder(
-      local,
-      this.clones.map(({ frame }) => frame),
-      layout
-    );
-    if (group.length < 2) {
+    // The strip is drawn over the clones, so scrolling on it cycles the
+    // group it shows, not the windows beneath it.
+    const onStrip = this.strip.covers(this.toWorkArea(point));
+    const group = onStrip ? this.hoverGroup : this.groupAt(point, layout);
+    if (group === null || group.length < 2) {
       return false;
     }
     const next = cycleFocus(group, this.focused, direction);
     if (next === this.focused) {
       return false;
     }
+    this.focusOn(next, group, container, layout);
+    return true;
+  }
 
+  /**
+   * Move the focus to the clone at `index`: raise it and ease it to the
+   * focused opacity, ease the previously focused clone back and return it
+   * to its mount position, and point the strip's highlight at it. `group`
+   * is the group the move happened in, so the strip can be shown for it if
+   * no motion has reached the strip yet.
+   */
+  private focusOn(
+    index: number,
+    group: readonly number[],
+    container: St.Widget,
+    layout: DepthViewLayout
+  ): void {
     const animate = shouldAnimate();
     const setOpacity = (clone: Clutter.Clone, opacity: number) => {
       if (animate) {
@@ -260,13 +297,62 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       this.restoreMountPosition(container, previous);
       setOpacity(clone, layout.clones[previous]?.opacity ?? 255);
     }
-    const { clone } = this.clones[next];
+    const { clone } = this.clones[index];
     container.set_child_above_sibling(clone, null);
     setOpacity(clone, 255);
 
-    this.focused = next;
+    this.focused = index;
     this.lastCycledAt = Date.now();
-    return true;
+    // Normally the strip already shows this group, since the pointer had
+    // to move here (or is on the strip); if no motion was reported yet,
+    // show it now. The highlight is computed against the hover group
+    // itself, the array the strip was built from, so it cannot drift.
+    const shown = this.hoverGroup;
+    if (shown !== null && sameMembers(shown, group)) {
+      this.strip.setHighlight(focusWithin(shown, index));
+    } else {
+      this.showStrip(group);
+    }
+  }
+
+  hoverAt(point: Point): void {
+    const layout = this.layout;
+    if (layout === null || this.clones.length === 0 || this.closing) {
+      return;
+    }
+    // The strip is drawn over the clones, so a pointer on it is not on the
+    // windows beneath it: keep the strip as it is, or it would be rebuilt
+    // for those windows as the pointer reaches a thumbnail.
+    if (this.strip.covers(this.toWorkArea(point))) {
+      // Pointing at a thumbnail focuses its window, so the pointer can pick
+      // along the strip as the wheel does; the background, the gaps and
+      // the title band leave the focus alone.
+      const position = this.strip.thumbAt(this.toWorkArea(point));
+      const shown = this.hoverGroup;
+      if (position !== null && shown !== null) {
+        const index = shown[shown.length - 1 - position];
+        if (index !== undefined && index !== this.focused) {
+          const container = this.getContainer();
+          if (container !== null) {
+            this.focusOn(index, shown, container, layout);
+          }
+        }
+      }
+      return;
+    }
+    // The strip names what a click or Enter would pick here: any window
+    // under the pointer, alone or in an overlap, replaces what it shows,
+    // and empty desktop under the pointer takes it down.
+    const group = this.groupAt(point, layout);
+    if (group.length === 0) {
+      this.hoverGroup = null;
+      this.strip.hide();
+      return;
+    }
+    if (this.hoverGroup !== null && sameMembers(this.hoverGroup, group)) {
+      return;
+    }
+    this.showStrip(group);
   }
 
   unmount(options: UnmountOptions = {}): void {
@@ -284,6 +370,8 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     // the transitions are removed below and must not tear anything down.
     const generation = ++this.generation;
     this.closing = true;
+    this.hoverGroup = null;
+    this.strip.hide();
     container.remove_all_transitions();
     for (const { clone } of this.clones) {
       clone.remove_all_transitions();
@@ -340,7 +428,54 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       clonedCount: this.clones.length,
       lastActivatedAt: this.lastActivatedAt,
       lastCycledAt: this.lastCycledAt,
+      stripCount: this.strip.count,
     };
+  }
+
+  /** The indices of the clones drawn under `point` (stage coordinates), bottom to top. */
+  private groupAt(point: Point, layout: DepthViewLayout): number[] {
+    return windowsUnder(
+      this.toWorkArea(point),
+      this.clones.map(({ frame }) => frame),
+      layout
+    );
+  }
+
+  /** `point` (stage coordinates) relative to the mounted work area. */
+  private toWorkArea(point: Point): Point {
+    return { x: point.x - this.workAreaOrigin.x, y: point.y - this.workAreaOrigin.y };
+  }
+
+  /**
+   * Show `group` ({@link windowsUnder} order) in the strip, front to back,
+   * highlighting the focused member, and remember it as the hover group.
+   */
+  private showStrip(group: readonly number[]): void {
+    this.hoverGroup = group;
+    const members: CycleStripMember[] = [...group].reverse().map((index) => {
+      const { clone, win, rect, source } = this.clones[index];
+      return {
+        actor: source,
+        size: { width: rect.width, height: rect.height },
+        win,
+        onActivate: () => this.activateClone(clone, win),
+      };
+    });
+    this.strip.show(members, focusWithin(group, this.focused));
+  }
+
+  /**
+   * Raise `win` and close the overlay; `clone` is painted on top while the
+   * clones ease back, matching the stacking the real windows will have
+   * when they reappear.
+   */
+  private activateClone(clone: Clutter.Clone, win: Meta.Window): void {
+    if (this.closing) {
+      return;
+    }
+    this.activatedClone = clone;
+    this.activateWindow(win);
+    this.onActivated?.();
   }
 
   /**
@@ -379,6 +514,9 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     this.focused = null;
     this.activatedClone = null;
     this.closing = false;
+    this.hoverGroup = null;
+    this.onActivated = null;
+    this.strip.destroy();
 
     const done = this.pendingDone;
     this.pendingDone = [];
@@ -469,6 +607,10 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       console.warn(`[Zatto] GnomeWindowMirror.activate failed: ${e}`);
     }
   }
+}
+
+function sameMembers(a: readonly number[], b: readonly number[]): boolean {
+  return a.length === b.length && a.every((index, i) => index === b[i]);
 }
 
 function isNonEmpty(rect: Rect): boolean {
