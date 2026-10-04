@@ -24,17 +24,19 @@ feedback is that one large clone turned opaque. Whether the window they
 want is one notch away or four is a guess.
 
 This task adds a strip of live thumbnails along the bottom of the depth
-view. As soon as the cursor rests on a spot where two or more windows
-overlap, the strip shows those windows as small clones in a row, the
-frontmost on the left and each deeper one to its right. The thumbnail of
+view. As soon as the cursor rests on a window, the strip shows that
+window and the windows overlapping it there as small clones in a row, the
+frontmost on the left and each deeper one to its right; a single window
+gives a strip of one, so the strip always names what a click or Enter
+would pick. The thumbnail of
 the window the focus sits on carries an accent frame and its title is
 written under the strip. Each scroll notch moves the frame one thumbnail
 to the right (`forward`) or left (`backward`), wrapping, in step with the
 large clone that turns opaque. The user sees at a glance how many notches
 the window they want is away. Once shown, the strip stays: moving the
-cursor over a single window or an empty spot changes nothing, moving it
-onto another overlap of two or more windows rebuilds the strip for that
-group, and the strip goes away when the overlay closes. It is drawn over
+cursor over an empty spot changes nothing, moving it onto other windows
+rebuilds the strip for them, and the strip goes away when the overlay
+closes. It is drawn over
 the clones, so the cursor can travel from the overlap down to the strip
 and click a thumbnail, which raises that window and closes the overlay
 like clicking the large clone. Scrolling while the cursor is on the strip
@@ -94,12 +96,13 @@ positions and the cycling behaviour from the previous change.
   does nothing (the strip is drawn over the clones, so a pointer on it is
   not on the windows beneath; `CycleStrip.covers(point)` answers this).
   Otherwise it computes the group with `windowsUnder` against the mount
-  layout and compares it with the group shown last time. With fewer than
-  two members it does nothing — the strip, if shown, stays as it is. With
-  a changed membership of two or more it shows the strip for the new
-  group, in front-to-back order (the reverse of `windowsUnder`'s order),
+  layout and compares it with the group shown last time. With no member
+  it does nothing — the strip, if shown, stays as it is. With a changed
+  membership of one or more it shows the strip for the new group, in
+  front-to-back order (the reverse of `windowsUnder`'s order),
   highlighting `focusWithin(group, focused)`. With the same membership it
-  does nothing. The strip is never hidden by hovering; only closing hides
+  does nothing. (Cycling still needs two or more: `cycleAt` is
+  unchanged.) The strip is never hidden by hovering; only closing hides
   it. `cycleAt` keeps its behaviour for a point on the clones and, when it
   moves the focus, tells the strip the new highlight position; for a
   point on the strip it cycles the strip's group (the hover group shown)
@@ -193,10 +196,11 @@ keyboard navigation of the strip, and the touchpad pace factor.
       scroll-down notch moves the highlight one thumbnail to the right and
       wraps, in step with the large clone that comes forward; scroll-up
       reverses it.
-- [ ] Moving the cursor to a spot with one window or none leaves the
-      strip as it is; moving it to another overlap shows that group's
-      thumbnails; carrying the cursor from the overlap down onto the strip
-      keeps it up, and scrolling there walks the thumbnails.
+- [ ] Moving the cursor to a spot with no window leaves the strip as it
+      is; moving it onto a single window shows that window alone; moving
+      it to another overlap shows that group's thumbnails; carrying the
+      cursor from the overlap down onto the strip keeps it up, and
+      scrolling there walks the thumbnails.
 - [ ] Clicking a thumbnail raises that window and closes the overlay;
       Esc still closes with the desktop unchanged and the strip gone; the
       top bar and the dock remain usable while the strip is shown.

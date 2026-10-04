@@ -218,13 +218,13 @@ export interface WindowMirrorPort {
   cycleAt(point: Point, direction: CycleDirection): boolean;
   /**
    * Track the pointer at `point` (stage coordinates) for the cycle strip.
-   * With two or more windows drawn under the point, shows them as a strip
-   * of thumbnails along the bottom of the depth view, frontmost first, with
-   * the focused one highlighted, replacing any group shown before. Hovering
-   * never hides the strip: a point over fewer than two windows, within the
-   * group already shown, or on the strip itself changes nothing. The strip
-   * goes away only when the overlay closes. A no-op with nothing mounted or
-   * while closing.
+   * Shows the windows drawn under the point, one or more, as a strip of
+   * thumbnails along the bottom of the depth view, frontmost first, with
+   * the focused one highlighted, replacing whatever the strip showed
+   * before. Hovering never hides the strip: a point over no window, within
+   * the group already shown, or on the strip itself changes nothing. The
+   * strip goes away only when the overlay closes. A no-op with nothing
+   * mounted or while closing.
    */
   hoverAt(point: Point): void;
   /** Cheap state snapshot for the D-Bus Inspect endpoint. */
