@@ -7,7 +7,7 @@ const tuning = {
   paddingPx: 12,
   bottomMarginPx: 24,
   iconSizePx: 32,
-  titleHeightPx: 24,
+  titleHeightPx: 20,
   fadeMs: 150,
 };
 const area = { width: 1920, height: 1080 };
@@ -48,8 +48,8 @@ describe('computeStripLayout', () => {
 
     // 160 + 18 gap + 120 + 2·12 padding.
     expect(strip.width).toBe(322);
-    // 12 padding + 16 half icon + 120 thumbnail + 12 gap + 24 title band + 12 padding.
-    expect(strip.height).toBe(196);
+    // 12 padding + 16 half icon + 120 thumbnail + 12 gap + 20 title band + 6 padding.
+    expect(strip.height).toBe(186);
     expect(strip.x).toBe((1920 - 322) / 2);
     expect(strip.y + strip.height).toBe(1080 - 24);
     expect(thumbs[0].x).toBe(strip.x + 12);
@@ -58,7 +58,7 @@ describe('computeStripLayout', () => {
       x: strip.x + 12,
       y: strip.y + 12 + 16 + 120 + 12,
       width: 322 - 24,
-      height: 24,
+      height: 20,
     });
   });
 
