@@ -206,7 +206,7 @@ export interface WindowMirrorPort {
    * window nearer, wrapping at either end. With no focus at that spot the
    * focus is taken to sit on the frontmost window there, so the first
    * `forward` step focuses the window behind it. The focused clone turns
-   * opaque and is drawn on top of the others; the rest stay translucent.
+   * less translucent and is drawn on top of the others.
    * Nothing moves or resizes, and the real stacking order is untouched
    * until a clone is clicked. At most one clone is focused at a time.
    * When `point` lies on the cycle strip (see {@link hoverAt}), the focus
