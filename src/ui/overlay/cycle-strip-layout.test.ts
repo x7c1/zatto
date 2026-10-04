@@ -7,7 +7,7 @@ const tuning = {
   paddingPx: 12,
   bottomMarginPx: 24,
   iconSizePx: 32,
-  titleHeightPx: 36,
+  titleHeightPx: 32,
   fadeMs: 150,
 };
 const area = { width: 1920, height: 1080 };
@@ -36,7 +36,7 @@ describe('computeStripLayout', () => {
     expect(thumbs[1].y).toBe(thumbs[0].y);
   });
 
-  it('centres the strip horizontally and leaves room for the title and the margin below it', () => {
+  it('centres the strip horizontally, holds the title band inside, and keeps the margin below', () => {
     const { strip, thumbs, title } = computeStripLayout(
       [
         { width: 1600, height: 1200 },
@@ -48,13 +48,18 @@ describe('computeStripLayout', () => {
 
     // 160 + 18 gap + 120 + 2·12 padding.
     expect(strip.width).toBe(322);
-    // 12 padding + 16 half icon + 120 thumbnail + 12 padding.
-    expect(strip.height).toBe(160);
+    // 12 padding + 16 half icon + 120 thumbnail + 32 title band + 12 padding.
+    expect(strip.height).toBe(192);
     expect(strip.x).toBe((1920 - 322) / 2);
-    expect(strip.y + strip.height).toBe(1080 - 24 - 36);
+    expect(strip.y + strip.height).toBe(1080 - 24);
     expect(thumbs[0].x).toBe(strip.x + 12);
     expect(thumbs[0].y).toBe(strip.y + 12 + 16);
-    expect(title).toEqual({ x: strip.x, y: strip.y + strip.height, width: 322, height: 36 });
+    expect(title).toEqual({
+      x: strip.x + 12,
+      y: strip.y + 12 + 16 + 120,
+      width: 322 - 24,
+      height: 32,
+    });
   });
 
   it('centres each icon on the top edge of its thumbnail', () => {
@@ -84,7 +89,7 @@ describe('computeStripLayout', () => {
 
     expect(strip.x).toBeCloseTo(24);
     expect(strip.x + strip.width).toBeCloseTo(800 - 24);
-    expect(strip.y + strip.height).toBeCloseTo(600 - 24 - 36);
+    expect(strip.y + strip.height).toBeCloseTo(600 - 24);
     const height = thumbs[0].height;
     expect(height).toBeLessThan(120);
     for (const thumb of thumbs) {
@@ -97,10 +102,10 @@ describe('computeStripLayout', () => {
 
   it('gives an empty strip for no members', () => {
     expect(computeStripLayout([], area, tuning)).toEqual({
-      strip: { x: 960, y: 1020, width: 0, height: 0 },
+      strip: { x: 960, y: 1056, width: 0, height: 0 },
       thumbs: [],
       icons: [],
-      title: { x: 960, y: 1020, width: 0, height: 36 },
+      title: { x: 960, y: 1056, width: 0, height: 0 },
     });
   });
 });

@@ -3,7 +3,7 @@
  * view showing the windows under the cursor, frontmost on the left, each
  * with its app icon on its top edge, with a translucent rounded highlight
  * behind the focused one, as the Alt+Tab switcher marks its selection, and
- * its title under the strip.
+ * its title in a band under the thumbnails, inside the same background.
  *
  * Owned by `GnomeWindowMirror`, which decides when to show, highlight and
  * hide it. The strip is parented to the overlay's chrome container (see
@@ -30,12 +30,7 @@ const EASE_MODE = Clutter.AnimationMode.EASE_OUT_QUAD;
 
 const BACKGROUND_STYLE = 'background-color: rgba(30, 30, 30, 0.85); border-radius: 12px;';
 const HIGHLIGHT_STYLE = 'background-color: rgba(255, 255, 255, 0.2); border-radius: 10px;';
-/**
- * The Shell's own style for a window title over arbitrary content: the pill
- * the Activities Overview draws under each window preview. Reusing the
- * class keeps the title legible over any clone and follows the theme.
- */
-const TITLE_STYLE_CLASS = 'window-caption';
+const TITLE_STYLE = 'color: white; font-weight: bold;';
 /** How far the highlight extends beyond the highlighted thumbnail and its icon, in px. */
 const HIGHLIGHT_PAD_PX = 6;
 
@@ -158,13 +153,12 @@ export class CycleStrip {
       }
     });
 
-    // The title sits in a bin as wide as the strip, which centres the pill
-    // on the text's own width; the pill never grows past the strip.
+    // The title sits in a bin filling the title band, which centres the
+    // text; it reads against the strip's background whatever is behind.
     const label = new St.Label({
       reactive: false,
-      style: `max-width: ${Math.round(layout.title.width)}px;`,
+      style: `${TITLE_STYLE} max-width: ${Math.round(layout.title.width)}px;`,
     });
-    label.add_style_class_name(TITLE_STYLE_CLASS);
     label.clutter_text.ellipsize = Pango.EllipsizeMode.END;
     label.clutter_text.single_line_mode = true;
     const titleBin = new St.Bin({

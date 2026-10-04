@@ -158,9 +158,10 @@ positions and the cycling behaviour from the previous change.
 - Each thumbnail carries its app icon centred on its top edge
   (`iconSizePx`), the Activities Overview's window-preview icon moved
   from the bottom edge to the top.
-- The title is drawn as the Shell's `window-caption` pill, centred under
-  the strip in a reserved `titleHeightPx` band above `bottomMarginPx`, so
-  it is legible over any clone and no longer touches the bottom edge.
+- The title moved inside the strip: a `titleHeightPx` band below the
+  thumbnails, within the same dark background, so it reads against the
+  background whatever lies behind the strip and no longer touches the
+  bottom edge of the work area.
 
 Out of scope: thumbnails cropped to the frame rect (shadows excluded),
 keyboard navigation of the strip, and the touchpad pace factor.
@@ -192,7 +193,8 @@ keyboard navigation of the strip, and the touchpad pace factor.
       windows overlapping, opening the overlay and resting the cursor on
       the overlap shows a strip of three thumbnails along the bottom,
       frontmost on the left, each with its app icon on its top edge, the
-      leftmost highlighted and its title in a pill under the strip; each
+      leftmost highlighted and its title in the band under the thumbnails;
+      each
       scroll-down notch moves the highlight one thumbnail to the right and
       wraps, in step with the large clone that comes forward; scroll-up
       reverses it.
