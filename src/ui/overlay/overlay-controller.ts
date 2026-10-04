@@ -123,9 +123,9 @@ export class OverlayController {
     });
 
     this.modalGrab.onEsc(() => this.fsm.dismiss());
-    // A press on the top bar or the dock closes the overlay and still
-    // reaches its target, as in the Activities Overview.
-    this.modalGrab.onOutsidePress(() => this.fsm.dismiss());
+    // A press on nothing (the top bar, the dock, or the bare shade) closes
+    // the overlay and still reaches its target, as in the Activities Overview.
+    this.modalGrab.onEmptyPress(() => this.fsm.dismiss());
     // Cycling only makes sense once the open has committed: `opening` can
     // still fail and be torn down by abortOpen(), and while closing the
     // clones are on their way back onto the windows in the real order.
@@ -143,6 +143,14 @@ export class OverlayController {
         return;
       }
       this.windowMirror.hoverAt(point);
+    });
+    // Enter confirms like a click: the mirror raises the window and runs
+    // the mount's onActivated, which dismisses.
+    this.modalGrab.onConfirm((point) => {
+      if (this.fsm.getState() !== 'open') {
+        return;
+      }
+      this.windowMirror.activateAt(point);
     });
     // The modal grab is on the stage, so the trigger keeps firing while the
     // overlay is open: one trigger both opens and closes it.

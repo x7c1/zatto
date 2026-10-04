@@ -4,7 +4,7 @@
  * Unlike the pure FSM tests in `overlay-state-machine.test.ts`, these wire
  * the controller against fake hot-corner / overlay-actor / modal-grab
  * implementations and assert the cross-port behavior the controller is
- * responsible for: visibility, grab lifecycle, Esc and outside-press
+ * responsible for: visibility, grab lifecycle, Esc and empty-press
  * handling, debounce, and hiding / showing the real windows around the
  * clone transitions.
  */
@@ -77,12 +77,12 @@ describe('OverlayController', () => {
     expect(modalGrab.releaseCount).toBe(1);
   });
 
-  describe('outside press (onOutsidePress)', () => {
+  describe('empty press (onEmptyPress)', () => {
     it('closes the overlay and releases the grab while open', () => {
       const { controller, hotCorner, actor, modalGrab, windowMirror } = setup();
       hotCorner.fireEnter();
 
-      modalGrab.fireOutsidePress();
+      modalGrab.fireEmptyPress();
 
       expect(actor.isVisible()).toBe(false);
       expect(modalGrab.isHeld()).toBe(false);
@@ -97,7 +97,7 @@ describe('OverlayController', () => {
       hotCorner.fireEnter();
       modalGrab.fireEsc();
 
-      modalGrab.fireOutsidePress();
+      modalGrab.fireEmptyPress();
 
       expect(controller.snapshot().overlay.state).toBe('closing');
       expect(windowMirror.unmountCount).toBe(1);
@@ -107,7 +107,7 @@ describe('OverlayController', () => {
     it('does nothing while closed', () => {
       const { controller, actor, modalGrab, windowMirror } = setup();
 
-      modalGrab.fireOutsidePress();
+      modalGrab.fireEmptyPress();
 
       expect(controller.snapshot().overlay.state).toBe('closed');
       expect(actor.isVisible()).toBe(false);
@@ -486,6 +486,58 @@ describe('OverlayController', () => {
     });
   });
 
+  describe('Enter (onConfirm -> activateAt)', () => {
+    const point = { x: 640, y: 360 };
+
+    it('activates at the pointer and closes the overlay while open', () => {
+      const { controller, hotCorner, modalGrab, windowMirror } = setup();
+      hotCorner.fireEnter();
+
+      modalGrab.fireConfirm(point);
+
+      expect(windowMirror.activateCalls).toEqual([point]);
+      expect(controller.snapshot().windowMirror.lastActivatedAt).toBe(3_000);
+      expect(controller.snapshot().overlay.state).toBe('closed');
+      expect(modalGrab.isHeld()).toBe(false);
+    });
+
+    it('drops Enter while closed', () => {
+      const { modalGrab, windowMirror } = setup();
+
+      modalGrab.fireConfirm(point);
+
+      expect(windowMirror.activateCalls).toEqual([]);
+    });
+
+    it('drops Enter while opening', () => {
+      const { controller, hotCorner, modalGrab, windowMirror, realWindows } = setup();
+      const states: string[] = [];
+      realWindows.onCall = (call) => {
+        if (call === 'hide') {
+          states.push(controller.snapshot().overlay.state);
+          modalGrab.fireConfirm(point);
+        }
+      };
+
+      hotCorner.fireEnter();
+
+      expect(states).toEqual(['opening']);
+      expect(windowMirror.activateCalls).toEqual([]);
+    });
+
+    it('drops Enter while closing', () => {
+      const { controller, hotCorner, modalGrab, windowMirror } = setup();
+      windowMirror.deferUnmountDone = true;
+      hotCorner.fireEnter();
+      modalGrab.fireEsc();
+      expect(controller.snapshot().overlay.state).toBe('closing');
+
+      modalGrab.fireConfirm(point);
+
+      expect(windowMirror.activateCalls).toEqual([]);
+    });
+  });
+
   describe('real windows and the clone transitions', () => {
     /** Open the overlay with close eases deferred, ready to exercise a close path. */
     function setupOpen() {
@@ -503,8 +555,8 @@ describe('OverlayController', () => {
         close: (env: OpenEnv) => env.hotCorner.fireEnter(),
       },
       {
-        name: 'outside press',
-        close: (env: OpenEnv) => env.modalGrab.fireOutsidePress(),
+        name: 'empty press',
+        close: (env: OpenEnv) => env.modalGrab.fireEmptyPress(),
       },
       { name: 'Esc', close: (env: OpenEnv) => env.modalGrab.fireEsc() },
       {
@@ -574,7 +626,7 @@ describe('OverlayController', () => {
       advance(500); // well past the debounce window
 
       hotCorner.fireEnter();
-      modalGrab.fireOutsidePress();
+      modalGrab.fireEmptyPress();
       modalGrab.fireEsc();
 
       expect(controller.snapshot().overlay.state).toBe('closing');

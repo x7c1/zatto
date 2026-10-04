@@ -433,6 +433,30 @@ export class GnomeWindowMirror implements WindowMirrorPort {
   }
 
   /** The indices of the clones drawn under `point` (stage coordinates), bottom to top. */
+  activateAt(point: Point): boolean {
+    const layout = this.layout;
+    if (layout === null || this.clones.length === 0 || this.closing) {
+      return false;
+    }
+    let index = this.focused;
+    if (index === null) {
+      // No focus yet: the window a click here would raise, the frontmost
+      // one drawn under the point (or shown frontmost by the strip).
+      const onStrip = this.strip.covers(this.toWorkArea(point));
+      const group = onStrip ? this.hoverGroup : this.groupAt(point, layout);
+      if (group === null || group.length === 0) {
+        return false;
+      }
+      index = group[group.length - 1];
+    }
+    const mounted = this.clones[index];
+    if (mounted === undefined) {
+      return false;
+    }
+    this.activateClone(mounted.clone, mounted.win);
+    return true;
+  }
+
   private groupAt(point: Point, layout: DepthViewLayout): number[] {
     return windowsUnder(
       this.toWorkArea(point),
