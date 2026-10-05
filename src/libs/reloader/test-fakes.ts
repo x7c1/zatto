@@ -9,6 +9,7 @@
  */
 
 import type {
+  ExtensionHandle,
   ExtensionManagerPort,
   ShellExtensionSettingsPort,
   TempCopyPreparer,
@@ -51,11 +52,10 @@ export class FakeShellExtensionSettings implements ShellExtensionSettingsPort {
 
 /**
  * Call record for {@link FakeExtensionManager}. Tests assert on this to
- * verify the sequence of operations the reloader performs (e.g. "disable
- * was called before createExtensionObject").
+ * verify the sequence of operations the reloader performs (e.g. "the old
+ * instance was unloaded before createExtensionObject").
  */
 export type ExtensionManagerCall =
-  | { kind: 'disable'; uuid: string }
   | { kind: 'enable'; uuid: string }
   | { kind: 'lookup'; uuid: string }
   | { kind: 'loadExtension'; uuid: string }
@@ -65,10 +65,21 @@ export type ExtensionManagerCall =
 export interface FakeExtensionManagerOptions {
   /** UUIDs returned by `getUuids()`. */
   uuids?: string[];
-  /** Per-UUID return value for `disableExtension`. Defaults to `true`. */
-  disableResults?: Record<string, boolean>;
+  /** Per-UUID `ExtensionState` returned by `lookup`. Defaults to ACTIVE (1). */
+  states?: Record<string, number>;
+  /** Per-UUID `error` returned by `lookup`. */
+  errors?: Record<string, string>;
   /** Per-UUID return value for `enableExtension`. Defaults to `true`. */
   enableResults?: Record<string, boolean>;
+  /** UUIDs for which `unloadExtension` rejects. */
+  unloadThrows?: string[];
+  /** Called on every `enableExtension`, before it returns. */
+  onEnable?: (uuid: string) => void;
+}
+
+/** What {@link FakeExtensionManager.lookup} hands back. */
+export interface FakeExtension extends ExtensionHandle {
+  readonly uuid: string;
 }
 
 /**
@@ -79,8 +90,11 @@ export interface FakeExtensionManagerOptions {
 export class FakeExtensionManager implements ExtensionManagerPort {
   readonly calls: ExtensionManagerCall[] = [];
   private readonly uuids: string[];
-  private readonly disableResults: Record<string, boolean>;
+  private readonly states: Record<string, number>;
+  private readonly errors: Record<string, string>;
   private readonly enableResults: Record<string, boolean>;
+  private readonly unloadThrows: Set<string>;
+  private readonly onEnable: (uuid: string) => void;
   /**
    * Every UUID passed to `createExtensionObject` or seen at construction
    * time becomes "known" so `lookup` returns a stand-in object — this
@@ -91,8 +105,11 @@ export class FakeExtensionManager implements ExtensionManagerPort {
 
   constructor(options: FakeExtensionManagerOptions = {}) {
     this.uuids = [...(options.uuids ?? [])];
-    this.disableResults = { ...(options.disableResults ?? {}) };
+    this.states = { ...(options.states ?? {}) };
+    this.errors = { ...(options.errors ?? {}) };
     this.enableResults = { ...(options.enableResults ?? {}) };
+    this.unloadThrows = new Set(options.unloadThrows ?? []);
+    this.onEnable = options.onEnable ?? (() => {});
     for (const uuid of this.uuids) {
       this.known.add(uuid);
     }
@@ -102,38 +119,37 @@ export class FakeExtensionManager implements ExtensionManagerPort {
     return [...this.uuids];
   }
 
-  disableExtension(uuid: string): boolean {
-    this.calls.push({ kind: 'disable', uuid });
-    return this.disableResults[uuid] ?? true;
-  }
-
   enableExtension(uuid: string): boolean {
     this.calls.push({ kind: 'enable', uuid });
+    this.onEnable(uuid);
     return this.enableResults[uuid] ?? true;
   }
 
-  lookup(uuid: string): unknown | undefined {
+  lookup(uuid: string): FakeExtension | undefined {
     this.calls.push({ kind: 'lookup', uuid });
     if (!this.known.has(uuid)) {
       return undefined;
     }
-    return { uuid };
+    return { uuid, state: this.states[uuid] ?? 1, error: this.errors[uuid] };
   }
 
-  loadExtension(extension: unknown): Promise<unknown> {
-    const uuid = (extension as { uuid: string }).uuid;
+  loadExtension(extension: ExtensionHandle): Promise<unknown> {
+    const uuid = (extension as FakeExtension).uuid;
     this.calls.push({ kind: 'loadExtension', uuid });
     return Promise.resolve(extension);
   }
 
-  unloadExtension(extension: unknown): Promise<boolean> {
-    const uuid = (extension as { uuid: string }).uuid;
+  unloadExtension(extension: ExtensionHandle): Promise<boolean> {
+    const uuid = (extension as FakeExtension).uuid;
     this.calls.push({ kind: 'unloadExtension', uuid });
+    if (this.unloadThrows.has(uuid)) {
+      return Promise.reject(new Error(`unload failed for ${uuid}`));
+    }
     this.known.delete(uuid);
     return Promise.resolve(true);
   }
 
-  createExtensionObject(uuid: string, _dir: unknown, _type: number): void {
+  createExtensionObject(uuid: string, _dir: unknown): void {
     this.calls.push({ kind: 'createExtensionObject', uuid });
     this.known.add(uuid);
   }

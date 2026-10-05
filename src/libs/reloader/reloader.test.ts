@@ -1,10 +1,17 @@
 /**
  * Orchestration tests for `Reloader.reload()`.
  *
- * These exist to lock in the behaviour the reload-harden PR introduces:
- * the reloader must ABORT (not warn-and-continue) when
- * `disableExtension(currentUuid)` returns `false`, and `cleanupOldInstances`
- * must keep going across the remaining stale UUIDs even when one fails.
+ * These lock in three properties of the reload sequence:
+ *
+ * - The old instance is stopped with `unloadExtension`, never
+ *   `disableExtension` (which is not even on the port), so the canonical
+ *   UUID stays in `enabled-extensions` and the extension starts again on
+ *   the next login.
+ * - The reloader ABORTS when the current instance is not ACTIVE, since
+ *   `unloadExtension` would skip its `disable()` and leave it holding the
+ *   D-Bus name.
+ * - Stale reload UUIDs are pruned from GSettings BEFORE the new UUID is
+ *   enabled, so the prune write cannot race GNOME Shell's async enable.
  *
  * The pure-Gio side effects (file copying, GLib timers, D-Bus) are stubbed
  * through `ExtensionManagerPort` / `TempCopyPreparer` / `ShellExtensionSettingsPort`
@@ -43,10 +50,11 @@ function callKinds(calls: readonly ExtensionManagerCall[]): string[] {
 }
 
 describe('Reloader.reload()', () => {
-  it('aborts when disableExtension returns false (no clone, no enable, no GSettings write)', async () => {
+  it('aborts when the current instance is not ACTIVE (no unload, clone, enable, or GSettings write)', async () => {
     const extensionManager = new FakeExtensionManager({
       uuids: [BASE],
-      disableResults: { [BASE]: false },
+      states: { [BASE]: 3 },
+      errors: { [BASE]: 'enable() threw' },
     });
     const tempCopyPreparer = new FakeTempCopyPreparer();
     const settingsPort = new FakeShellExtensionSettings({ enabled: [BASE], disabled: [] });
@@ -54,29 +62,43 @@ describe('Reloader.reload()', () => {
     const reloader = makeReloader(extensionManager, tempCopyPreparer, settingsPort);
     await reloader.reload();
 
-    // The disable was attempted on the current UUID.
-    expect(extensionManager.calls).toContainEqual({ kind: 'disable', uuid: BASE });
-    // …and then everything stops: nothing was prepared, created, loaded, or enabled.
+    expect(extensionManager.calls).toContainEqual({ kind: 'lookup', uuid: BASE });
+    expect(callKinds(extensionManager.calls)).not.toContain('unloadExtension');
     expect(tempCopyPreparer.prepared).toEqual([]);
     expect(callKinds(extensionManager.calls)).not.toContain('createExtensionObject');
     expect(callKinds(extensionManager.calls)).not.toContain('enable');
-    expect(callKinds(extensionManager.calls)).not.toContain('loadExtension');
-    // GSettings stays untouched — no prune fires on the abort path.
     expect(settingsPort.enabledWrites).toBe(0);
     expect(settingsPort.disabledWrites).toBe(0);
   });
 
-  it('runs the full reload sequence in order when every step succeeds', async () => {
-    const extensionManager = new FakeExtensionManager({
-      uuids: [BASE],
-    });
+  it('aborts when the extension manager does not know the current instance', async () => {
+    const extensionManager = new FakeExtensionManager({ uuids: [] });
     const tempCopyPreparer = new FakeTempCopyPreparer();
-    const settingsPort = new FakeShellExtensionSettings({
-      enabled: [BASE, `${BASE}-reload-1000`],
-      disabled: [],
-    });
+    const settingsPort = new FakeShellExtensionSettings({ enabled: [BASE], disabled: [] });
+
+    const reloader = makeReloader(extensionManager, tempCopyPreparer, settingsPort);
+    await reloader.reload();
+
+    expect(tempCopyPreparer.prepared).toEqual([]);
+    expect(callKinds(extensionManager.calls)).not.toContain('enable');
+  });
+
+  it('unloads the old instance, then creates, loads, prunes, and enables the new one', async () => {
     const timestamp = 1700000000000000;
     const newUuid = `${BASE}-reload-${timestamp}`;
+    const settingsPort = new FakeShellExtensionSettings({
+      enabled: [BASE, `${BASE}-reload-1000`],
+      disabled: [`${BASE}-reload-500`],
+    });
+    // Snapshot GSettings at the moment the new UUID is enabled.
+    let enabledAtEnable: string[] | undefined;
+    const extensionManager = new FakeExtensionManager({
+      uuids: [BASE],
+      onEnable: () => {
+        enabledAtEnable = settingsPort.getEnabled();
+      },
+    });
+    const tempCopyPreparer = new FakeTempCopyPreparer();
 
     const reloader = makeReloader(
       extensionManager,
@@ -87,41 +109,31 @@ describe('Reloader.reload()', () => {
     );
     await reloader.reload();
 
-    // Sequencing: disable → createExtensionObject → loadExtension → enable
-    // → unloadExtension(old). The `lookup` calls are interleaved but the
-    // load-bearing operations land in this order.
-    const filtered = extensionManager.calls.filter(
-      (c) => c.kind !== 'lookup' && c.kind !== 'unloadExtension'
-    );
+    const filtered = extensionManager.calls.filter((c) => c.kind !== 'lookup');
     expect(filtered).toEqual([
-      { kind: 'disable', uuid: BASE },
+      { kind: 'unloadExtension', uuid: BASE },
       { kind: 'createExtensionObject', uuid: newUuid },
       { kind: 'loadExtension', uuid: newUuid },
       { kind: 'enable', uuid: newUuid },
     ]);
 
-    // TempCopyPreparer was invoked with the new UUID and cleanup ran with
-    // the new tmp dir.
     expect(tempCopyPreparer.prepared).toEqual([newUuid]);
     expect(tempCopyPreparer.cleanupTargets).toEqual([`/tmp/${newUuid}`]);
 
-    // Old extension was unloaded after the new one came up.
-    expect(extensionManager.calls).toContainEqual({ kind: 'unloadExtension', uuid: BASE });
-
-    // pruneStaleReloadUuids ran: the stale `-reload-1000` was dropped, BASE
-    // stayed. The new UUID does NOT show up here because the fake
-    // ExtensionManager does not side-effect into GSettings (the real GNOME
-    // Shell would); we just verify the prune-write happened.
+    // The prune had already landed when the new UUID was enabled, and the
+    // canonical UUID survived it: that entry is what starts the extension
+    // on the next login.
+    expect(enabledAtEnable).toEqual([BASE]);
     expect(settingsPort.getEnabled()).toEqual([BASE]);
-    expect(settingsPort.enabledWrites).toBe(1);
+    expect(settingsPort.getDisabled()).toEqual([]);
   });
 
-  it('cleanupOldInstances logs but continues when disable returns false for a stale UUID', async () => {
+  it('cleanupOldInstances keeps going when unloading one stale UUID fails', async () => {
     const staleA = `${BASE}-reload-1000`;
     const staleB = `${BASE}-reload-2000`;
     const extensionManager = new FakeExtensionManager({
       uuids: [BASE, staleA, staleB],
-      disableResults: { [staleA]: false },
+      unloadThrows: [staleA],
     });
     const tempCopyPreparer = new FakeTempCopyPreparer();
     const settingsPort = new FakeShellExtensionSettings({
@@ -132,20 +144,16 @@ describe('Reloader.reload()', () => {
     const reloader = makeReloader(extensionManager, tempCopyPreparer, settingsPort);
     await reloader.reload();
 
-    // Both stale UUIDs were visited even though one returned false.
-    const disabledUuids = extensionManager.calls
-      .filter((c) => c.kind === 'disable')
+    const unloaded = extensionManager.calls
+      .filter((c) => c.kind === 'unloadExtension')
       .map((c) => c.uuid);
-    expect(disabledUuids).toContain(staleA);
-    expect(disabledUuids).toContain(staleB);
-
-    // The current UUID was disabled (the main reload path still ran).
-    expect(disabledUuids).toContain(BASE);
+    expect(unloaded).toEqual([staleA, staleB, BASE]);
 
     // The reload still completed: a new UUID got created + enabled.
     expect(callKinds(extensionManager.calls)).toContain('createExtensionObject');
     expect(callKinds(extensionManager.calls)).toContain('enable');
   });
+
   it("cleanupOldInstances leaves other extensions' reload copies alone", async () => {
     const ownStale = `${BASE}-reload-1000`;
     const otherReload = 'sutto@x7c1.github.io-reload-2000';
@@ -163,7 +171,7 @@ describe('Reloader.reload()', () => {
     await reloader.reload();
 
     const touched = extensionManager.calls
-      .filter((c) => c.kind === 'disable' || c.kind === 'unloadExtension')
+      .filter((c) => c.kind === 'unloadExtension')
       .map((c) => c.uuid);
     expect(touched).toContain(ownStale);
     expect(touched).not.toContain(otherReload);

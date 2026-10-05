@@ -30,20 +30,43 @@ export interface ShellExtensionSettingsPort {
 }
 
 /**
+ * The slice of a GNOME Shell `ExtensionObject` that the reloader reads.
+ */
+export interface ExtensionHandle {
+  /**
+   * `ExtensionState` value (`ACTIVE` is 1). Optional only because
+   * `@girs/gnome-shell` types it so; GNOME Shell always sets it.
+   */
+  readonly state?: number;
+  /** Message of the exception `enable()` threw, when the state is `ERROR`. */
+  readonly error?: string;
+}
+
+/**
  * Thin wrapper around `Main.extensionManager` so the reload orchestration
  * logic in `Reloader.reload()` can be exercised without a live GNOME Shell.
  *
  * The shape mirrors the surface of `ExtensionManager` that the reloader
  * actually touches — anything new the reloader needs goes here first.
+ *
+ * There is deliberately no `disableExtension`. It moves the UUID from
+ * `enabled-extensions` into `disabled-extensions`, and GNOME Shell starts
+ * an extension at login only if its canonical UUID is in
+ * `enabled-extensions`; the `-reload-` copies live in `/tmp`, which is
+ * never scanned. `unloadExtension` runs the same `disable()` path but never
+ * writes GSettings, so the reloader stops instances with it instead.
  */
 export interface ExtensionManagerPort {
   getUuids(): readonly string[];
-  disableExtension(uuid: string): boolean;
   enableExtension(uuid: string): boolean;
-  lookup(uuid: string): unknown | undefined;
-  loadExtension(extension: unknown): Promise<unknown>;
-  unloadExtension(extension: unknown): Promise<boolean>;
-  createExtensionObject(uuid: string, dir: unknown, type: number): void;
+  lookup(uuid: string): ExtensionHandle | undefined;
+  loadExtension(extension: ExtensionHandle): Promise<unknown>;
+  unloadExtension(extension: ExtensionHandle): Promise<boolean>;
+  /**
+   * Register the extension found in `dir` as a per-user extension. `dir` is
+   * the handle returned by {@link TempCopyPreparer.prepare}.
+   */
+  createExtensionObject(uuid: string, dir: unknown): void;
 }
 
 /**
