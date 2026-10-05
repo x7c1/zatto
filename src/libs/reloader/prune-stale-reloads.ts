@@ -3,12 +3,17 @@
  * Shell's enabled-extensions / disabled-extensions GSettings arrays.
  *
  * Background: `Reloader.reload()` enables a fresh `<base>-reload-<ts>` UUID
- * and disables the previous one on every `npm run dev` iteration. GNOME
- * Shell never garbage-collects entries in the GSettings arrays, so disabled
- * reload UUIDs pile up indefinitely. This helper, invoked at the tail of
- * `reload()` after the new UUID has been enabled, deletes every accumulated
- * reload UUID for the given base except the one currently running, leaving
- * the canonical UUID and unrelated extensions untouched.
+ * and unloads the previous one on every `npm run dev` iteration. Unloading
+ * never writes GSettings, so the previous UUID stays in
+ * `enabled-extensions` and stale reload UUIDs pile up there indefinitely.
+ * `disabled-extensions` collects no new entries, but is pruned as well to
+ * clear out what older reloaders (which disabled instead of unloading) left
+ * there. This helper, invoked by `reload()` just before the new UUID is
+ * enabled, deletes every accumulated reload UUID for the given base except
+ * the new one, leaving the canonical UUID and unrelated extensions
+ * untouched. The canonical UUID is what makes GNOME Shell start the
+ * extension on the next login: the reload copies live in /tmp, which is
+ * never scanned at startup.
  */
 
 import type { ShellExtensionSettingsPort } from './ports.js';

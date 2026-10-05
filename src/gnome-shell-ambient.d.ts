@@ -20,6 +20,10 @@ declare module 'resource:///org/gnome/shell/extensions/extension.js' {
   export * from '@girs/gnome-shell/dist/extensions/extension';
 }
 
+declare module 'resource:///org/gnome/shell/misc/extensionUtils.js' {
+  export * from '@girs/gnome-shell/dist/misc/extensionUtils';
+}
+
 declare module 'resource:///org/gnome/shell/ui/background.js' {
   export * from '@girs/gnome-shell/dist/ui/background';
 }

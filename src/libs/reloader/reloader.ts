@@ -42,6 +42,18 @@ const RECOVERY_HINT =
   'The previous extension instance likely still owns the D-Bus name. ' +
   'On Wayland, log out and back in to recover.';
 
+/**
+ * GNOME Shell's `ExtensionState.ACTIVE`.
+ *
+ * Spelled as a numeric literal because the enum's member names drifted:
+ * `@girs/gnome-shell` 50.0.0 still declares `ENABLED`/`DISABLED`, while the
+ * object that `resource:///org/gnome/shell/misc/extensionUtils.js` exports in
+ * Shell 50 has `ACTIVE`/`INACTIVE`. The numeric value did not change
+ * (`ENABLED` and `ACTIVE` are both 1). Keeping it a literal also keeps this
+ * file free of `resource://*` imports.
+ */
+const EXTENSION_STATE_ACTIVE = 1;
+
 export interface ReloaderOptions {
   /** GSettings port (must be provided — wire it up via `makeReloader`). */
   settingsPort: ShellExtensionSettingsPort;
@@ -94,9 +106,9 @@ export class Reloader {
   /**
    * Reload the extension by creating a temporary copy with a new UUID.
    *
-   * Sequencing note: we disable the current extension BEFORE preparing the
+   * Sequencing note: we unload the current extension BEFORE preparing the
    * `/tmp` clone so an aborted reload leaves no orphan tmp dir behind. The
-   * cost (an extra few ms with the extension disabled) is well worth the
+   * cost (an extra few ms with no instance running) is well worth the
    * clean failure mode.
    */
   async reload(): Promise<void> {
@@ -108,32 +120,45 @@ export class Reloader {
       // so a failure here cannot strand us with no enabled instance.
       this.cleanupOldInstances();
 
-      // Disable the current extension FIRST so its D-Bus interface is
+      // Unload the current extension FIRST so its D-Bus interface is
       // unregistered before the new instance tries to claim the same name.
-      // If this fails we abort: enabling a second instance over a wedged
-      // one is exactly the cascade this reload-harden PR exists to prevent.
-      console.log('[Reloader] Disabling old extension...');
-      const disableSuccess = this.extensionManager.disableExtension(this.currentUuid);
-      if (!disableSuccess) {
-        throw new Error(`extensionManager.disableExtension('${this.currentUuid}') returned false`);
+      // `unloadExtension()` runs the same disable path as
+      // `disableExtension()` (it calls `disable()`, rebases the extensions
+      // enabled after this one, and marks the extension inactive) and then
+      // drops the object from the manager, but it never writes GSettings.
+      // `disableExtension()` would move the canonical UUID from
+      // `enabled-extensions` into `disabled-extensions`, leaving the
+      // extension dead after the next login: startup only scans the XDG data
+      // dirs, so the `-reload-` UUID that stays behind in
+      // `enabled-extensions` resolves to nothing.
+      console.log('[Reloader] Unloading old extension...');
+      const oldExtension = this.extensionManager.lookup(this.currentUuid);
+      if (!oldExtension || oldExtension.state !== EXTENSION_STATE_ACTIVE) {
+        // `unloadExtension()` skips `disable()` for a non-active extension,
+        // so we abort rather than enable a second instance over it. The
+        // realistic trigger is a previous instance whose own `enable()`
+        // threw: GNOME Shell parks it in `ExtensionState.ERROR` (3) without
+        // ever calling `disable()`, so it still holds the D-Bus name and its
+        // `error` carries the message that exception raised.
+        const reason = oldExtension
+          ? `it is in state ${oldExtension.state} instead of ACTIVE` +
+            (oldExtension.error ? ` (${oldExtension.error})` : '')
+          : 'the extension manager does not know it';
+        throw new Error(`cannot unload '${this.currentUuid}' because ${reason}`);
       }
+      await this.extensionManager.unloadExtension(oldExtension);
 
       // Wait for D-Bus interface to fully unregister.
       await this.wait(100);
 
-      // Prepare new UUID and directory only after the disable succeeded —
+      // Prepare new UUID and directory only after the unload succeeded —
       // this way an aborted reload leaves no orphan `/tmp/<uuid>-reload-*`.
       const timestamp = this.now();
       const newUuid = `${this.originalUuid}-reload-${timestamp}`;
       const tmpDir = `/tmp/${newUuid}`;
       const tmpDirFile = this.tempCopyPreparer.prepare(newUuid);
 
-      // Create extension object (returns void in Shell 46+).
-      this.extensionManager.createExtensionObject(
-        newUuid,
-        tmpDirFile,
-        1 // ExtensionType.PER_USER
-      );
+      this.extensionManager.createExtensionObject(newUuid, tmpDirFile);
 
       const newExtension = this.extensionManager.lookup(newUuid);
       if (!newExtension) {
@@ -142,20 +167,29 @@ export class Reloader {
 
       await this.extensionManager.loadExtension(newExtension);
 
+      // Prune stale `<base>-reload-<digits>` entries that prior `npm run dev`
+      // iterations left behind in `org.gnome.shell` enabled-extensions /
+      // disabled-extensions. Must run BEFORE the new UUID is enabled:
+      // GNOME Shell's `_onEnabledExtensionsChanged()` handler is async, and a
+      // write that lands while the enable of the new UUID is still in flight
+      // starts a second enable of the same UUID (it is not yet recorded as
+      // enabled), which constructs the extension twice and leaves an orphaned
+      // instance holding the D-Bus name. Running it here is safe: the new
+      // UUID is in neither array yet (`createExtensionObject` and
+      // `loadExtension` never write GSettings), and every UUID this write
+      // removes was either unloaded above or is a leftover from an earlier
+      // session that was never loaded here, so the handler this write
+      // triggers has nothing to enable or disable. The new UUID is passed as
+      // the one to preserve, so the prune cannot drop it.
+      pruneStaleReloadUuids(this.settingsPort, this.originalUuid, newUuid);
+
       const enableSuccess = this.extensionManager.enableExtension(newUuid);
       if (!enableSuccess) {
         throw new Error(`Failed to enable extension ${newUuid}`);
       }
 
-      // Clean up old files and the now-stale extension instance.
+      // Clean up temp dirs left behind by earlier reload cycles.
       this.tempCopyPreparer.cleanupOtherTempDirs(tmpDir);
-      await this.unloadOldExtension(this.currentUuid);
-
-      // Prune stale `<base>-reload-<digits>` entries that prior `npm run dev`
-      // iterations left behind in `org.gnome.shell` enabled-extensions /
-      // disabled-extensions. Runs only after the new UUID is enabled so we
-      // never accidentally evict the currently-running instance.
-      pruneStaleReloadUuids(this.settingsPort, this.originalUuid, newUuid);
 
       console.log('[Reloader] Reload complete!');
     } catch (e: unknown) {
@@ -165,23 +199,20 @@ export class Reloader {
   }
 
   /**
-   * Clean up old reload instances. Best-effort: if `disableExtension`
-   * returns `false` (e.g. the entry is already stale or errored) we log
-   * and continue across the remaining UUIDs.
+   * Clean up old reload instances. Best-effort: a failure on one UUID is
+   * logged and the remaining UUIDs are still visited.
+   *
+   * `unloadExtension()` never writes GSettings, so the stale UUIDs it leaves
+   * in the `org.gnome.shell` arrays are removed later by
+   * `pruneStaleReloadUuids`.
    */
   private cleanupOldInstances(): void {
     const uuids = this.extensionManager.getUuids();
     for (const uuid of uuids) {
       // Only this extension's own copies: other extensions may run their
-      // own reload copies, and disabling those would take them down.
+      // own reload copies, and unloading those would take them down.
       if (isReloadUuidOf(this.originalUuid, uuid) && uuid !== this.currentUuid) {
         try {
-          const disableSuccess = this.extensionManager.disableExtension(uuid);
-          if (!disableSuccess) {
-            console.log(
-              `[Reloader] cleanupOldInstances: disable returned false for ${uuid} (likely stale/errored — continuing)`
-            );
-          }
           const extension = this.extensionManager.lookup(uuid);
           if (extension) {
             this.extensionManager.unloadExtension(extension);
@@ -190,29 +221,6 @@ export class Reloader {
           console.log(`[Reloader] Error removing ${uuid}: ${getErrorMessage(e)}`);
         }
       }
-    }
-  }
-
-  /**
-   * Unload old extension instance (already disabled).
-   */
-  private async unloadOldExtension(uuid: string): Promise<void> {
-    await this.wait(100);
-
-    const oldExtension = this.extensionManager.lookup(uuid);
-    if (!oldExtension) {
-      return;
-    }
-
-    try {
-      const success = await this.extensionManager.unloadExtension(oldExtension);
-      if (success) {
-        console.log(`[Reloader] Successfully unloaded: ${uuid}`);
-      } else {
-        console.warn(`[Reloader] Failed to unload extension ${uuid}`);
-      }
-    } catch (e: unknown) {
-      console.log(`[Reloader] Error unloading: ${getErrorMessage(e)}`);
     }
   }
 }
