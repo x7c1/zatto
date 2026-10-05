@@ -49,10 +49,12 @@ export interface ExtensionHandle {
  * The shape mirrors the surface of `ExtensionManager` that the reloader
  * actually touches — anything new the reloader needs goes here first.
  *
- * There is deliberately no `disableExtension`: it moves the UUID from
- * `enabled-extensions` into `disabled-extensions`, which would leave the
- * canonical UUID disabled after the next login. The reloader stops
- * instances with `unloadExtension` instead, which never writes GSettings.
+ * There is deliberately no `disableExtension`. It moves the UUID from
+ * `enabled-extensions` into `disabled-extensions`, and GNOME Shell starts
+ * an extension at login only if its canonical UUID is in
+ * `enabled-extensions`; the `-reload-` copies live in `/tmp`, which is
+ * never scanned. `unloadExtension` runs the same `disable()` path but never
+ * writes GSettings, so the reloader stops instances with it instead.
  */
 export interface ExtensionManagerPort {
   getUuids(): readonly string[];

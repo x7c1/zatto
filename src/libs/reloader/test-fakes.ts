@@ -71,7 +71,7 @@ export interface FakeExtensionManagerOptions {
   errors?: Record<string, string>;
   /** Per-UUID return value for `enableExtension`. Defaults to `true`. */
   enableResults?: Record<string, boolean>;
-  /** UUIDs for which `unloadExtension` throws synchronously. */
+  /** UUIDs for which `unloadExtension` rejects. */
   unloadThrows?: string[];
   /** Called on every `enableExtension`, before it returns. */
   onEnable?: (uuid: string) => void;
@@ -143,7 +143,7 @@ export class FakeExtensionManager implements ExtensionManagerPort {
     const uuid = (extension as FakeExtension).uuid;
     this.calls.push({ kind: 'unloadExtension', uuid });
     if (this.unloadThrows.has(uuid)) {
-      throw new Error(`unload failed for ${uuid}`);
+      return Promise.reject(new Error(`unload failed for ${uuid}`));
     }
     this.known.delete(uuid);
     return Promise.resolve(true);

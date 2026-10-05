@@ -128,7 +128,7 @@ describe('Reloader.reload()', () => {
     expect(settingsPort.getDisabled()).toEqual([]);
   });
 
-  it('cleanupOldInstances keeps going when unloading one stale UUID throws', async () => {
+  it('cleanupOldInstances keeps going when unloading one stale UUID fails', async () => {
     const staleA = `${BASE}-reload-1000`;
     const staleB = `${BASE}-reload-2000`;
     const extensionManager = new FakeExtensionManager({
