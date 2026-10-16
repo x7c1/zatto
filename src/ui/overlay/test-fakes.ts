@@ -293,6 +293,7 @@ export class FakeWindowMirror implements WindowMirrorPort {
       lastActivatedAt: this.lastActivatedAt,
       lastCycledAt: this.lastCycledAt,
       stripCount: this.stripCount,
+      windows: [],
     };
   }
 

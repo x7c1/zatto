@@ -20,6 +20,7 @@
 
 import type { ScrollStepDirection } from '../../libs/shell/scroll-stepper.js';
 import type { CycleDirection, Point } from './depth-cycle.js';
+import type { AttachmentOutcome, WindowDescription } from './transient-attachment.js';
 
 /**
  * Hot-corner trigger. Fires {@link HotCornerPort.onEnter} every time the
@@ -162,7 +163,21 @@ export interface WindowMirrorSnapshot {
    * from a group of windows too small to show one.
    */
   readonly stripCount: number;
+  /**
+   * The windows the last `mount()` considered, bottom to top, each with
+   * what became of it: drawn as a root, attached to one, or not drawn and
+   * why. Empty before the first mount, and in release builds. Lets an
+   * on-hardware check tell why a window is missing from the depth view.
+   */
+  readonly windows: readonly ConsideredWindow[];
 }
+
+/** One window a mount considered, for {@link WindowMirrorSnapshot.windows}. */
+export type ConsideredWindow = WindowDescription &
+  AttachmentOutcome & {
+    readonly title: string | null;
+    readonly wmClass: string | null;
+  };
 
 /** Options for {@link WindowMirrorPort.unmount}. */
 export interface UnmountOptions {
