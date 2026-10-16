@@ -85,11 +85,11 @@ redirect popups and menus, and transient windows on secondary monitors.
 
 ### Before merge (verified outside the check command)
 
-- [ ] With gnome-text-editor showing its "Save changes?" dialog, and with
+- [x] With gnome-text-editor showing its "Save changes?" dialog, and with
       a browser's "Save as" dialog open, the depth view draws each dialog
       on its parent, it moves and fades with the parent while opening,
       cycling and closing, and it no longer pops in after the close —
       needs a person: it is a visual and timing check on the live session.
-- [ ] Clicking the parent's clone or the dialog's clone closes the overlay
+- [x] Clicking the parent's clone or the dialog's clone closes the overlay
       with the dialog focused — needs a person: it needs pointer input on
       the live session.
