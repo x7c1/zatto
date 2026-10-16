@@ -167,7 +167,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     // includes client-side shadows and invisible borders. Sizing a clone
     // to the frame rect would squash it and make the swap with the real
     // window visible. A window may extend outside the work area (e.g.
-    // under an auto-hidden dock); its clone then starts outside the
+    // under a fixed dock); its clone then starts outside the
     // container, which does not clip, and eases in.
     const entries = this.collectEligible()
       .map(({ actor, win }) => ({
