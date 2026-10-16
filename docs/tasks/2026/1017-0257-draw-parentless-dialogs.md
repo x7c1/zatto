@@ -72,9 +72,9 @@ Out of scope: windows on secondary monitors.
 
 ### Before merge (verified outside the check command)
 
-- [ ] After `npm run dev`, with an extension's preferences window open,
+- [x] After `npm run dev`, with an extension's preferences window open,
       opening the depth view and then reading the Inspect snapshot shows
       that window as drawn (a root), with its type.
-- [ ] The preferences window appears in the depth view and can be cycled
+- [x] The preferences window appears in the depth view and can be cycled
       to and raised like any other window — needs a person: it is a
       visual and pointer check on the live session.
