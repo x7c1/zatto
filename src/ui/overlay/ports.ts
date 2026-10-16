@@ -208,7 +208,8 @@ export interface WindowMirrorPort {
    * when animations are disabled, tears down synchronously. Either way
    * `onDone` is called exactly once; an animated close still in flight when
    * a later call tears the clones down immediately has its `onDone` called
-   * by that teardown. Must be idempotent.
+   * by that teardown. Must be idempotent, and must also tear down the clones
+   * of a mount() that threw part-way (the controller rolls a failed open back this way).
    */
   unmount(options?: UnmountOptions): void;
   /**

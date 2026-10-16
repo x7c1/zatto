@@ -203,34 +203,51 @@ export class OverlayController {
   }
 
   private handleOpen(): void {
-    this.actor.show();
-    // The grab return value is intentionally not checked: a failed
-    // `pushModal` is logged by the port and the overlay still remains
-    // visually open (matching the pre-port behavior). Esc and outside
-    // presses will not work in that degenerate case, but the user can
-    // dismiss via the hot corner.
-    this.modalGrab.acquire();
-    // Mount the live clones after the grab is held so the clones inherit
-    // the same input-routing context the user will be clicking through. A
-    // `false` return (no eligible window) is not an error: the overlay
-    // stays open with just the dimmer and the user dismisses via the
-    // corner or Esc — the PoC value is "did the API even fire", not "did
-    // we always find something to show".
-    this.windowMirror.mount(() => this.fsm.dismiss());
-    // The clones now sit exactly on their windows, so hiding the sources
-    // in this same call stack swaps one for the other with no frame of
-    // double image. Anything that throws from here on must not leave the
-    // desktop hidden: restore first, then tear down the rest of what the
-    // open set up and return the FSM to `closed` (from `opening`, which
-    // ignores every toggle, the overlay would otherwise be stuck), then
-    // let the failure propagate.
+    // Any step of the open may throw (e.g. a Clutter error while cloning a
+    // window). A failure must not leave a dimmed screen that no input
+    // closes: undo only what has already been set up, restoring the
+    // desktop first, return the FSM to `closed` (from `opening`, which
+    // ignores every toggle, the overlay would otherwise be stuck), then let
+    // the original error propagate.
+    let grabbed = false;
+    let mounting = false;
+    let hiding = false;
     try {
+      this.actor.show();
+      // The grab return value is intentionally not checked: a failed
+      // `pushModal` is logged by the port and the overlay still remains
+      // visually open (matching the pre-port behavior). Esc and outside
+      // presses will not work in that degenerate case, but the user can
+      // dismiss via the hot corner.
+      this.modalGrab.acquire();
+      grabbed = true;
+      // Mount the live clones after the grab is held so the clones inherit
+      // the same input-routing context the user will be clicking through. A
+      // `false` return (no eligible window) is not an error: the overlay
+      // stays open with just the dimmer and the user dismisses via the
+      // corner or Esc — the PoC value is "did the API even fire", not "did
+      // we always find something to show". A throw may come after some
+      // clones were created, so the rollback unmounts whenever the mount
+      // started.
+      mounting = true;
+      this.windowMirror.mount(() => this.fsm.dismiss());
+      // The clones now sit exactly on their windows, so hiding the sources
+      // in this same call stack swaps one for the other with no frame of
+      // double image. A throw from `hide()` may come after some windows
+      // were hidden, so the rollback restores whenever the hide started.
+      hiding = true;
       this.realWindows.hide();
       this.fsm.commitOpened();
     } catch (err) {
-      this.realWindows.restore();
-      this.modalGrab.release();
-      this.windowMirror.unmount({ immediate: true });
+      if (hiding) {
+        this.realWindows.restore();
+      }
+      if (grabbed) {
+        this.modalGrab.release();
+      }
+      if (mounting) {
+        this.windowMirror.unmount({ immediate: true });
+      }
       this.actor.hide();
       this.fsm.abortOpen();
       throw err;
