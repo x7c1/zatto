@@ -3,6 +3,7 @@ import { computeDepthLayout, DEPTH_VIEW_TUNING, type Rect } from './depth-layout
 import {
   type AttachedGroup,
   attachTransients,
+  explainAttachment,
   type WindowDescription,
   type WindowKind,
 } from './transient-attachment.js';
@@ -151,8 +152,45 @@ describe('attachTransients', () => {
     ]);
   });
 
-  it('does not draw a dialog without a transient parent, nor other window types', () => {
-    const windows = [win(1), win(2, 'dialog'), win(3, 'other', { transientFor: 1 })];
+  it.each([
+    'dialog',
+    'modal-dialog',
+    'utility',
+  ] as const)('draws a %s without a transient parent as a root', (type) => {
+    const windows = [win(1), win(2, type)];
+    expect(byId(windows, attachTransients(windows))).toEqual([
+      { parent: 1, transients: [], activate: 1 },
+      { parent: 2, transients: [], activate: 2 },
+    ]);
+  });
+
+  it('draws a dialog whose transient parent is not described as a root', () => {
+    const windows = [win(1, 'dialog', { transientFor: 99 })];
+    expect(byId(windows, attachTransients(windows))).toEqual([
+      { parent: 1, transients: [], activate: 1 },
+    ]);
+  });
+
+  it('attaches the dialog of a parentless dialog to it', () => {
+    const windows = [win(1, 'dialog'), win(2, 'modal-dialog', { transientFor: 1 })];
+    expect(byId(windows, attachTransients(windows))).toEqual([
+      { parent: 1, transients: [2], activate: 2 },
+    ]);
+  });
+
+  it('does not draw a minimized or other-workspace parentless dialog', () => {
+    const windows = [
+      win(1),
+      win(2, 'dialog', { minimized: true }),
+      win(3, 'utility', { onCurrentWorkspace: false }),
+    ];
+    expect(byId(windows, attachTransients(windows))).toEqual([
+      { parent: 1, transients: [], activate: 1 },
+    ]);
+  });
+
+  it('does not draw other window types', () => {
+    const windows = [win(1), win(2, 'other'), win(3, 'other', { transientFor: 1 })];
     expect(byId(windows, attachTransients(windows))).toEqual([
       { parent: 1, transients: [], activate: 1 },
     ]);
@@ -166,6 +204,61 @@ describe('attachTransients', () => {
     ];
     expect(byId(windows, attachTransients(windows))).toEqual([
       { parent: 1, transients: [], activate: 1 },
+    ]);
+  });
+});
+
+describe('explainAttachment', () => {
+  const explain = (windows: readonly WindowDescription[]) =>
+    explainAttachment(windows, attachTransients(windows));
+
+  it('reports roots and the root each attached transient is drawn with', () => {
+    const windows = [
+      win(1),
+      win(2, 'dialog', { transientFor: 1 }),
+      win(3, 'modal-dialog', { transientFor: 2 }),
+      win(4, 'dialog'),
+    ];
+    expect(explain(windows)).toEqual([
+      { outcome: 'root' },
+      { outcome: 'attached', root: 1 },
+      { outcome: 'attached', root: 1 },
+      { outcome: 'root' },
+    ]);
+  });
+
+  it('reports why each window that is not drawn is left out', () => {
+    const windows = [
+      win(1, 'other'),
+      win(2, 'normal', { minimized: true }),
+      win(3, 'dialog', { onCurrentWorkspace: false }),
+      win(4, 'dialog', { transientFor: 2 }),
+    ];
+    expect(explain(windows)).toEqual([
+      { outcome: 'not-drawn', reason: 'unsupported-type' },
+      { outcome: 'not-drawn', reason: 'minimized' },
+      { outcome: 'not-drawn', reason: 'other-workspace' },
+      { outcome: 'not-drawn', reason: 'parent-not-drawn' },
+    ]);
+  });
+
+  it('reports the windows of a transient cycle as having no drawn parent', () => {
+    const windows = [win(1, 'dialog', { transientFor: 2 }), win(2, 'dialog', { transientFor: 1 })];
+    expect(explain(windows)).toEqual([
+      { outcome: 'not-drawn', reason: 'parent-not-drawn' },
+      { outcome: 'not-drawn', reason: 'parent-not-drawn' },
+    ]);
+  });
+
+  it('reports a window the caller left out of the drawn groups as dropped', () => {
+    const windows = [win(1), win(2, 'dialog', { transientFor: 1 }), win(3)];
+    const drawn = attachTransients(windows)
+      .filter(({ parent }) => windows[parent].id !== 3)
+      .map((group) => ({ ...group, transients: [] }));
+    expect(explainAttachment(windows, drawn)).toEqual([
+      { outcome: 'root' },
+      { outcome: 'not-drawn', reason: 'dropped' },
+      { outcome: 'not-drawn', reason: 'dropped' },
     ]);
   });
 });

@@ -83,9 +83,16 @@ import {
   type DepthViewLayout,
   type Rect,
 } from './depth-layout.js';
-import type { UnmountOptions, WindowMirrorPort, WindowMirrorSnapshot } from './ports.js';
+import type {
+  ConsideredWindow,
+  UnmountOptions,
+  WindowMirrorPort,
+  WindowMirrorSnapshot,
+} from './ports.js';
 import {
+  type AttachmentOutcome,
   attachTransients,
+  explainAttachment,
   type WindowDescription,
   type WindowKind,
 } from './transient-attachment.js';
@@ -128,6 +135,8 @@ export class GnomeWindowMirror implements WindowMirrorPort {
   private clones: MountedClone[] = [];
   private lastActivatedAt: number | null = null;
   private lastCycledAt: number | null = null;
+  /** The windows the last mount considered, for the Inspect snapshot (development builds). */
+  private considered: readonly ConsideredWindow[] = [];
   /** Origin of the work area the clones were laid out in. */
   private workAreaOrigin = { x: 0, y: 0 };
   /**
@@ -177,6 +186,9 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       // mirrored twice and the pending close completes.
       this.unmount({ immediate: true });
     }
+    // A mount that bails out below considers no window; do not leave the
+    // previous mount's list in the snapshot as if it were this one's.
+    this.considered = [];
 
     const container = this.getContainer();
     if (container === null) {
@@ -210,10 +222,13 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     // under a fixed dock); its clone then starts outside the
     // container, which does not clip, and eases in.
     const all = this.collectWindows();
-    const entries = attachTransients(all.map(({ desc }) => desc))
+    const descriptions = all.map(({ desc }) => desc);
+    const entries = attachTransients(descriptions)
       .map(({ parent, transients, activate }) => {
         const { actor, win } = all[parent];
         return {
+          parent,
+          activate,
           actor,
           win,
           activateWin: all[activate].win,
@@ -221,6 +236,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
           rect: this.bufferRectOf(win),
           transients: transients
             .map((t) => ({
+              index: t,
               actor: all[t].actor,
               win: all[t].win,
               rect: this.bufferRectOf(all[t].win),
@@ -231,6 +247,19 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       // Mutter occasionally hands back 0x0 mid-resize. Skip rather than
       // mount an invisible-but-reactive clone.
       .filter(({ frame, rect }) => isNonEmpty(frame) && isNonEmpty(rect));
+    this.considered = __DEV__
+      ? describeConsidered(
+          all,
+          explainAttachment(
+            descriptions,
+            entries.map(({ parent, activate, transients }) => ({
+              parent,
+              activate,
+              transients: transients.map(({ index }) => index),
+            }))
+          )
+        )
+      : [];
     const layout = computeDepthLayout(
       entries.map(({ frame }) => frame),
       { width: workArea.width, height: workArea.height },
@@ -527,6 +556,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       lastActivatedAt: this.lastActivatedAt,
       lastCycledAt: this.lastCycledAt,
       stripCount: this.strip.count,
+      windows: this.considered,
     };
   }
 
@@ -781,6 +811,19 @@ function kindOf(type: Meta.WindowType): WindowKind {
     default:
       return 'other';
   }
+}
+
+/** The considered windows with their outcomes, titles and WM classes, for the snapshot. */
+function describeConsidered(
+  all: readonly { win: Meta.Window; desc: WindowDescription }[],
+  outcomes: readonly AttachmentOutcome[]
+): ConsideredWindow[] {
+  return all.map(({ win, desc }, index) => ({
+    ...desc,
+    ...outcomes[index],
+    title: win.get_title() ?? null,
+    wmClass: win.get_wm_class() ?? null,
+  }));
 }
 
 function sameMembers(a: readonly number[], b: readonly number[]): boolean {
