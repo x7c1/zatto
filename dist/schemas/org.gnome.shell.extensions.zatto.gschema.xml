@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.zatto" path="/org/gnome/shell/extensions/zatto/">
+    <key name="hot-corners" type="as">
+      <default>['bottom-left', 'bottom-right']</default>
+      <summary>Hot corners that open the depth view</summary>
+      <description>Corners of the primary monitor that open the depth view when the pointer enters them. Known values are 'top-left', 'top-right', 'bottom-left' and 'bottom-right'; unknown values are ignored. An empty list means no corner opens the depth view.</description>
+    </key>
+  </schema>
+</schemalist>

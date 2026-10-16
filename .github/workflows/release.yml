@@ -116,6 +116,12 @@ jobs:
         if: steps.version-check.outputs.changed == 'true'
         run: npm ci
 
+      # The build compiles the GSettings schema into schemas/gschemas.compiled,
+      # which the package must carry.
+      - name: Install glib-compile-schemas
+        if: steps.version-check.outputs.changed == 'true'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libglib2.0-bin
+
       - name: Build extension
         if: steps.version-check.outputs.changed == 'true'
         run: npm run build:release

@@ -29,6 +29,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The build compiles the GSettings schema with glib-compile-schemas.
+      - name: Install glib-compile-schemas
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libglib2.0-bin
+
       - name: Run lint and format check
         run: npm run check:strict
 

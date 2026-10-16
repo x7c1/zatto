@@ -23,10 +23,13 @@
   },
   "include": [
     "src/extension.ts",
+    "src/prefs.ts",
+    "src/prefs-ambient.d.ts",
     "src/gnome-shell-ambient.d.ts",
     "src/build-mode.d.ts",
     "src/infra/**/*.ts",
     "src/libs/**/*.ts",
+    "src/prefs/**/*.ts",
     "src/ui/**/*.ts"
   ],
   "exclude": ["node_modules", "dist", ".tsc", "**/*.test.ts"]

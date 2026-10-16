@@ -1,9 +1,10 @@
 /// <reference path="./build-mode.d.ts" />
 
+import type Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import { EXTENSION_UUID } from './infra/constants.js';
-import { DBusInspector } from './libs/inspector/index.js';
+import { DBusInspector, type StateProvider } from './libs/inspector/index.js';
 import { DBusReloader } from './libs/reloader/index.js';
 import { safeDisable } from './libs/safe-disable.js';
 import { GnomeModalGrab } from './libs/shell/gnome-modal-grab.js';
@@ -11,18 +12,22 @@ import { CycleStrip } from './ui/overlay/cycle-strip.js';
 import { GnomeRealWindows } from './ui/overlay/gnome-real-windows.js';
 import { GnomeWindowMirror } from './ui/overlay/gnome-window-mirror.js';
 import type { HotCorner } from './ui/overlay/hot-corner-geometry.js';
+import {
+  DEFAULT_HOT_CORNERS,
+  HOT_CORNERS_KEY,
+  parseHotCorners,
+} from './ui/overlay/hot-corner-setting.js';
 import { HotCornerTrigger } from './ui/overlay/hot-corner-trigger.js';
 import { OverlayActor } from './ui/overlay/overlay-actor.js';
 import { OverlayController } from './ui/overlay/overlay-controller.js';
-
-/** Corners of the primary monitor that open the depth view. */
-const ACTIVE_HOT_CORNERS: readonly HotCorner[] = ['bottom-left', 'bottom-right'];
 
 export default class ZattoExtension extends Extension {
   private dbusReloader: DBusReloader | null = null;
   private dbusInspector: DBusInspector | null = null;
   private overlayController: OverlayController | null = null;
   private realWindows: GnomeRealWindows | null = null;
+  private settings: Gio.Settings | null = null;
+  private hotCornersChangedId: number | null = null;
 
   enable() {
     console.log('[Zatto] Extension enabled');
@@ -38,7 +43,8 @@ export default class ZattoExtension extends Extension {
 
     const actor = new OverlayActor();
     const modalGrab = new GnomeModalGrab(() => actor.getActor());
-    const hotCorner = new HotCornerTrigger(ACTIVE_HOT_CORNERS);
+    this.settings = this.loadSettings();
+    const hotCorner = new HotCornerTrigger(this.readHotCorners());
     const cycleStrip = new CycleStrip(() => actor.getChromeContainer());
     const windowMirror = new GnomeWindowMirror(() => actor.getCloneContainer(), cycleStrip);
     const realWindows = new GnomeRealWindows();
@@ -56,7 +62,16 @@ export default class ZattoExtension extends Extension {
     );
     this.overlayController.enable();
 
-    const inspector = this.initializeDBusInspector(this.overlayController);
+    // The trigger swaps only its own corner actors, so a change is safe in
+    // any overlay state; the controller never hears about it.
+    this.hotCornersChangedId =
+      this.settings?.connect(`changed::${HOT_CORNERS_KEY}`, () => {
+        hotCorner.setCorners(this.readHotCorners());
+      }) ?? null;
+
+    const inspector = this.initializeDBusInspector(
+      withHotCornerSet(this.overlayController, hotCorner)
+    );
     this.dbusInspector = inspector?.enable() ? inspector : null;
   }
 
@@ -74,12 +89,45 @@ export default class ZattoExtension extends Extension {
     safeDisable('dbusReloader', () => this.dbusReloader?.disable());
     this.dbusReloader = null;
 
+    // Stop following the setting before the trigger goes away with the
+    // controller.
+    safeDisable('settings', () => {
+      if (this.hotCornersChangedId !== null) {
+        this.settings?.disconnect(this.hotCornersChangedId);
+      }
+    });
+    this.hotCornersChangedId = null;
+    this.settings = null;
+
     safeDisable('overlayController', () => this.overlayController?.disable());
     this.overlayController = null;
 
     // After the controller has restored the windows, drop the backdrop actor.
     safeDisable('realWindows', () => this.realWindows?.destroy());
     this.realWindows = null;
+  }
+
+  /**
+   * The extension's GSettings. `getSettings()` reads `schemas/` under the
+   * extension's own directory, which is the `/tmp/<uuid>/` copy when the
+   * development reloader runs one; that copy shares the schema id and path,
+   * so it sees the same values. Returns `null` (logged) when the schema is
+   * missing, and the extension then runs with the default corners.
+   */
+  private loadSettings(): Gio.Settings | null {
+    try {
+      return this.getSettings();
+    } catch (e) {
+      console.log(`[Zatto] ERROR: Failed to load settings, using default hot corners: ${e}`);
+      return null;
+    }
+  }
+
+  private readHotCorners(): HotCorner[] {
+    if (!this.settings) {
+      return [...DEFAULT_HOT_CORNERS];
+    }
+    return parseHotCorners(this.settings.get_strv(HOT_CORNERS_KEY));
   }
 
   private initializeDBusReloader(): DBusReloader | null {
@@ -94,15 +142,33 @@ export default class ZattoExtension extends Extension {
     }
   }
 
-  private initializeDBusInspector(controller: OverlayController): DBusInspector | null {
+  private initializeDBusInspector(provider: StateProvider): DBusInspector | null {
     if (!__DEV__) {
       return null;
     }
     try {
-      return new DBusInspector(controller, this.metadata.uuid);
+      return new DBusInspector(provider, this.metadata.uuid);
     } catch (e) {
       console.log(`[Zatto] ERROR: Failed to initialize DBusInspector: ${e}`);
       return null;
     }
   }
+}
+
+/**
+ * The controller's snapshot with the trigger's active corners added as
+ * `hotCorner.corners`, so a changed `hot-corners` setting shows up in the
+ * Inspect endpoint. The corner set belongs to the trigger, not the
+ * controller, hence the merge here.
+ */
+function withHotCornerSet(controller: OverlayController, trigger: HotCornerTrigger): StateProvider {
+  return {
+    snapshot: () => {
+      const snapshot = controller.snapshot();
+      return {
+        ...snapshot,
+        hotCorner: { ...snapshot.hotCorner, corners: trigger.getCorners() },
+      };
+    },
+  };
 }

@@ -21,7 +21,10 @@
  * (`opacity: 0`) but reactive, so they fire `enter-event` without any visual
  * disruption. While enabled, the trigger follows `monitors-changed` and moves
  * the actors to the new primary monitor's corners, so a layout change does not
- * leave them stranded away from the real corners.
+ * leave them stranded away from the real corners. {@link
+ * HotCornerTrigger.setCorners} changes the corner set while enabled without
+ * touching anything else (the overlay in particular), so a change can arrive
+ * in any overlay state.
  *
  * Activities-Overview suppression: Clutter performs a stage repick whenever
  * pointer grabs are acquired/released or the reactive actor graph changes
@@ -60,7 +63,7 @@ interface CornerActor {
 }
 
 export class HotCornerTrigger implements HotCornerPort {
-  private readonly corners: readonly HotCorner[];
+  private corners: readonly HotCorner[];
   private enabled = false;
   private actors: CornerActor[] = [];
   private handler: (() => void) | null = null;
@@ -72,6 +75,22 @@ export class HotCornerTrigger implements HotCornerPort {
   /** @param corners Corners of the primary monitor that open the depth view. */
   constructor(corners: readonly HotCorner[]) {
     this.corners = [...new Set(corners)];
+  }
+
+  /** The corners the trigger currently covers (its configured set). */
+  getCorners(): readonly HotCorner[] {
+    return this.corners;
+  }
+
+  /**
+   * Replace the corner set. While enabled, the actors follow at once: removed
+   * corners lose their actor, added corners get one, kept corners keep theirs.
+   */
+  setCorners(corners: readonly HotCorner[]): void {
+    this.corners = [...new Set(corners)];
+    if (this.enabled) {
+      this.syncToPrimaryMonitor('corners-changed');
+    }
   }
 
   /** Register the single enter handler. Must be set before {@link enable}. */
@@ -120,8 +139,9 @@ export class HotCornerTrigger implements HotCornerPort {
 
   /**
    * Place one actor on each configured corner of the current primary monitor,
-   * creating the actors if needed. Without a primary monitor the actors are
-   * removed until a later `monitors-changed` brings one back.
+   * creating missing actors and destroying those of corners no longer
+   * configured. Without a primary monitor the actors are removed until a later
+   * `monitors-changed` brings one back.
    */
   private syncToPrimaryMonitor(reason: string): void {
     const monitor = Main.layoutManager.primaryMonitor;
@@ -130,10 +150,18 @@ export class HotCornerTrigger implements HotCornerPort {
       this.destroyActors();
       return;
     }
-    if (this.actors.length === 0) {
-      // Push each actor as it is created: if a later `createActor` throws,
-      // the earlier ones are already tracked and `disable()` removes them.
-      for (const corner of this.corners) {
+    for (const entry of [...this.actors]) {
+      if (!this.corners.includes(entry.corner)) {
+        // Untrack only after the destroy succeeded, so a throw leaves the
+        // actor tracked and `disable()` tries again.
+        this.destroyActor(entry);
+        this.actors = this.actors.filter((a) => a !== entry);
+      }
+    }
+    for (const corner of this.corners) {
+      if (!this.actors.some((a) => a.corner === corner)) {
+        // Push each actor as it is created: if a later `createActor` throws,
+        // the earlier ones are already tracked and `disable()` removes them.
         this.actors.push(this.createActor(corner));
       }
     }
@@ -159,11 +187,15 @@ export class HotCornerTrigger implements HotCornerPort {
   }
 
   private destroyActors(): void {
-    for (const { actor, enterHandlerId } of this.actors) {
-      actor.disconnect(enterHandlerId);
-      Main.layoutManager.removeChrome(actor);
-      actor.destroy();
+    for (const entry of this.actors) {
+      this.destroyActor(entry);
     }
     this.actors = [];
+  }
+
+  private destroyActor({ actor, enterHandlerId }: CornerActor): void {
+    actor.disconnect(enterHandlerId);
+    Main.layoutManager.removeChrome(actor);
+    actor.destroy();
   }
 }

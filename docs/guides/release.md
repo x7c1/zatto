@@ -135,8 +135,10 @@ edits the merged PR, which needs no other workflow to react.
 - `.github/scripts/` — the logic behind them. Version arithmetic and title
   validation are in `release-version.sh`; the body layout, summary handling
   and link rewrite in `release-summary.sh`. Both are pure functions covered by
-  `release-version.test.sh` and `release-summary.test.sh`, which `CI` runs
-  (every `*.test.sh` there). Run them locally with
+  `release-version.test.sh` and `release-summary.test.sh`;
+  `package-extension.test.sh` builds a release in a temporary copy of the
+  working tree and checks the zip carries `prefs.js` and the compiled schema.
+  `CI` runs every `*.test.sh` there. Run them locally with
   `for t in .github/scripts/*.test.sh; do bash "$t"; done`.
 
 ## When something fails
