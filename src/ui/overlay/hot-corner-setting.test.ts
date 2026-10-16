@@ -59,7 +59,7 @@ describe('withHotCorner', () => {
     expect(withHotCorner(['bottom-left'], 'top-right', true)).toEqual(['top-right', 'bottom-left']);
   });
 
-  it('switches one corner off, keeping a top-left set by other means', () => {
+  it('switches one corner off, keeping the rest', () => {
     expect(
       withHotCorner(['top-left', 'bottom-left', 'bottom-right'], 'bottom-left', false)
     ).toEqual(['top-left', 'bottom-right']);

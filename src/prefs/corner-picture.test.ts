@@ -15,19 +15,16 @@ function placementOf(corner: CornerPlacement['corner']): CornerPlacement {
 
 describe('CORNER_PLACEMENTS', () => {
   it.each([
+    ['top-left', 'start', 'start', 'Top left corner'],
+    ['top-right', 'end', 'start', 'Top right corner'],
     ['bottom-left', 'start', 'end', 'Bottom left corner'],
     ['bottom-right', 'end', 'end', 'Bottom right corner'],
-    ['top-right', 'end', 'start', 'Top right corner'],
-  ] as const)('puts the offered %s corner at its picture corner as a toggle', (corner, horizontal, vertical, label) => {
-    expect(placementOf(corner)).toEqual({ corner, horizontal, vertical, interactive: true, label });
+  ] as const)('puts the %s corner at its picture corner', (corner, horizontal, vertical, label) => {
+    expect(placementOf(corner)).toEqual({ corner, horizontal, vertical, label });
   });
 
-  it('marks the top-left corner at the top left without a toggle', () => {
-    const placement = placementOf('top-left');
-    expect(placement.horizontal).toBe('start');
-    expect(placement.vertical).toBe('start');
-    expect(placement.interactive).toBe(false);
-    expect(placement.label).toContain('Activities');
+  it('places every corner exactly once', () => {
+    expect(CORNER_PLACEMENTS).toHaveLength(4);
   });
 });
 
