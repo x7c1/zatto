@@ -46,6 +46,8 @@ export class FakeHotCorner implements HotCornerPort {
 export class FakeOverlayActor implements OverlayActorPort {
   mounted = false;
   destroyed = false;
+  /** Test helper: make `show()` become visible and then throw. */
+  showShouldThrow: Error | null = null;
   private visible = false;
 
   mount(): void {
@@ -57,6 +59,9 @@ export class FakeOverlayActor implements OverlayActorPort {
       return;
     }
     this.visible = true;
+    if (this.showShouldThrow !== null) {
+      throw this.showShouldThrow;
+    }
   }
 
   hide(): void {
@@ -79,6 +84,8 @@ export class FakeModalGrab implements ModalGrabPort {
   releaseCount = 0;
   /** Toggle to make `acquire()` return false (simulating a `pushModal` failure). */
   acquireShouldFail = false;
+  /** Test helper: make `acquire()` throw without taking the grab. */
+  acquireShouldThrow: Error | null = null;
   private held = false;
   private escHandler: (() => void) | null = null;
   private emptyPressHandler: (() => void) | null = null;
@@ -108,6 +115,9 @@ export class FakeModalGrab implements ModalGrabPort {
 
   acquire(): boolean {
     this.acquireCount++;
+    if (this.acquireShouldThrow !== null) {
+      throw this.acquireShouldThrow;
+    }
     if (this.acquireShouldFail) {
       return false;
     }
@@ -185,6 +195,11 @@ export class FakeWindowMirror implements WindowMirrorPort {
    * clone so tests that don't care about the count keep working unchanged.
    */
   nextMountCount = 1;
+  /**
+   * Test helper: make `mount()` throw after creating its clones, like a
+   * production mount that fails part-way through cloning the windows.
+   */
+  mountShouldThrow: Error | null = null;
   /** Wall-clock epoch ms recorded on a simulated clone click. */
   lastActivatedAt: number | null = null;
   /** Every `cycleAt()` call, in order. */
@@ -213,6 +228,9 @@ export class FakeWindowMirror implements WindowMirrorPort {
     }
     this.activatedHandler = onActivated;
     this.clonedCount = this.nextMountCount;
+    if (this.mountShouldThrow !== null) {
+      throw this.mountShouldThrow;
+    }
     return this.clonedCount > 0;
   }
 

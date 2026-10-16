@@ -724,5 +724,80 @@ describe('OverlayController', () => {
       expect(modalGrab.isHeld()).toBe(true);
       expect(actor.isVisible()).toBe(true);
     });
+
+    describe('rolls back only what was set up when an earlier step of the open throws', () => {
+      type Setup = ReturnType<typeof setup>;
+      const cases: {
+        step: string;
+        arm: (s: Setup, failure: Error) => void;
+        disarm: (s: Setup) => void;
+        grabAcquired: boolean;
+        mountStarted: boolean;
+      }[] = [
+        {
+          step: 'actor.show()',
+          arm: ({ actor }, failure) => {
+            actor.showShouldThrow = failure;
+          },
+          disarm: ({ actor }) => {
+            actor.showShouldThrow = null;
+          },
+          grabAcquired: false,
+          mountStarted: false,
+        },
+        {
+          step: 'modalGrab.acquire()',
+          arm: ({ modalGrab }, failure) => {
+            modalGrab.acquireShouldThrow = failure;
+          },
+          disarm: ({ modalGrab }) => {
+            modalGrab.acquireShouldThrow = null;
+          },
+          grabAcquired: false,
+          mountStarted: false,
+        },
+        {
+          step: 'windowMirror.mount() (after creating some clones)',
+          arm: ({ windowMirror }, failure) => {
+            windowMirror.nextMountCount = 2;
+            windowMirror.mountShouldThrow = failure;
+          },
+          disarm: ({ windowMirror }) => {
+            windowMirror.mountShouldThrow = null;
+          },
+          grabAcquired: true,
+          mountStarted: true,
+        },
+      ];
+
+      for (const { step, arm, disarm, grabAcquired, mountStarted } of cases) {
+        it(`when ${step} throws`, () => {
+          const s = setup({ debounceMs: 100 });
+          const { controller, hotCorner, actor, modalGrab, windowMirror, realWindows, advance } = s;
+          const failure = new Error(`boom in ${step}`);
+          arm(s, failure);
+
+          expect(() => hotCorner.fireEnter()).toThrow(failure);
+
+          expect(controller.snapshot().overlay.state).toBe('closed');
+          expect(actor.isVisible()).toBe(false);
+          expect(modalGrab.isHeld()).toBe(false);
+          expect(modalGrab.releaseCount).toBe(grabAcquired ? 1 : 0);
+          expect(windowMirror.unmountCalls).toEqual(mountStarted ? [{ immediate: true }] : []);
+          expect(controller.snapshot().windowMirror.clonedCount).toBe(0);
+          // The real windows were never hidden: only enable()'s restore ran.
+          expect(realWindows.calls).toEqual(['restore']);
+          expect(controller.snapshot().realWindows.hidden).toBe(false);
+
+          // The next enter after the debounce window opens the overlay again.
+          disarm(s);
+          advance(100);
+          hotCorner.fireEnter();
+          expect(controller.snapshot().overlay.state).toBe('open');
+          expect(modalGrab.isHeld()).toBe(true);
+          expect(actor.isVisible()).toBe(true);
+        });
+      }
+    });
   });
 });
