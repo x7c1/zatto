@@ -70,10 +70,11 @@ Open the preferences from the Extensions app, or with:
 gnome-extensions prefs zatto@x7c1.github.io
 ```
 
-The page shows a picture of the display with a toggle at each corner you
-can switch: bottom-left, bottom-right and top-right. The top-left corner is
-not offered, because GNOME Shell's own Activities hot corner lives there;
-the picture only marks it. A text below the picture says which corners open
-the depth view.
+The page shows a picture of the display with a toggle at each of its four
+corners. A text below the picture says which corners open the depth view.
+
+GNOME Shell's own Activities hot corner also lives in the top-left corner.
+If you switch zatto's top-left corner on while GNOME's is on too, the text
+says so; you can turn GNOME's off in Settings › Multitasking › Hot Corner.
 
 A change applies at once, without logging out.

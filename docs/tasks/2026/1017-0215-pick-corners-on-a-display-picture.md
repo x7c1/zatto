@@ -68,15 +68,18 @@ GTK. Out of scope: secondary monitors, and other settings.
 
 - [x] The switch rows are gone from `src/prefs/` and the corners are
       toggle buttons (gates in `check_command`).
-- [x] A unit test covers the placement table: each offered corner maps to
-      its picture position and is interactive, and top-left maps to the
-      top-left position and is not interactive.
+- [x] A unit test covers the placement table: each of the four corners maps
+      to its picture position. (Changed in review: the author asked for
+      top-left to be a toggle too, off by default, so no corner is
+      non-interactive any more; a unit test also covers the description's
+      sentence about GNOME's own hot corner.)
 - [x] The existing setting tests still pass (`hot-corner-setting.test.ts`).
 
 ### Before merge (verified outside the check command)
 
 - [ ] In the preferences window the picture reads as the screen, the
-      three corner toggles sit at the matching corners, the top-left marker
-      explains the missing corner, and toggling a corner changes which
+      four corner toggles sit at the matching corners, the description
+      mentions GNOME's hot corner when top-left is on and GNOME's is on too,
+      and toggling a corner changes which
       corner opens the depth view, live — needs a person: it is a visual
       and pointer check on the live session.

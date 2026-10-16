@@ -1,8 +1,8 @@
 /**
  * Pure layout of the preferences window's picture of the display: where each
- * hot corner sits on the picture, which corners can be switched there, and
- * how large the picture is. Kept free of GTK imports so it can be
- * unit-tested; `hot-corners-page.ts` turns it into widgets.
+ * hot corner's toggle sits on the picture and how large the picture is. Kept
+ * free of GTK imports so it can be unit-tested; `hot-corners-page.ts` turns
+ * it into widgets.
  */
 
 import type { HotCorner } from '../ui/overlay/hot-corner-geometry.js';
@@ -10,18 +10,13 @@ import type { HotCorner } from '../ui/overlay/hot-corner-geometry.js';
 /** An edge of the picture along one axis, as GTK's `START` / `END` alignment. */
 export type PictureEdge = 'start' | 'end';
 
-/** One corner of the picture. */
+/** One corner of the picture, switched by a toggle there. */
 export interface CornerPlacement {
   readonly corner: HotCorner;
   /** The picture's left (`start`) or right (`end`) edge. */
   readonly horizontal: PictureEdge;
   /** The picture's top (`start`) or bottom (`end`) edge. */
   readonly vertical: PictureEdge;
-  /**
-   * Whether the corner is a toggle. The top-left corner is not: GNOME
-   * Shell's own Activities hot corner lives there, so it is only marked.
-   */
-  readonly interactive: boolean;
   /** Tooltip and accessible label of the corner's control. */
   readonly label: string;
 }
@@ -32,28 +27,24 @@ export const CORNER_PLACEMENTS: readonly CornerPlacement[] = [
     corner: 'top-left',
     horizontal: 'start',
     vertical: 'start',
-    interactive: false,
-    label: 'Activities: GNOME Shell opens the overview from this corner',
+    label: 'Top left corner',
   },
   {
     corner: 'top-right',
     horizontal: 'end',
     vertical: 'start',
-    interactive: true,
     label: 'Top right corner',
   },
   {
     corner: 'bottom-left',
     horizontal: 'start',
     vertical: 'end',
-    interactive: true,
     label: 'Bottom left corner',
   },
   {
     corner: 'bottom-right',
     horizontal: 'end',
     vertical: 'end',
-    interactive: true,
     label: 'Bottom right corner',
   },
 ];

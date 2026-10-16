@@ -1,13 +1,13 @@
 /**
  * The preferences page that chooses which corners of the primary monitor
  * open the depth view. The corners are picked on a picture of the display:
- * a toggle at each offered corner writes the whole `hot-corners` list back,
+ * a toggle at each corner writes the whole `hot-corners` list back,
  * and the extension follows the change live.
  */
 
 import Adw from 'gi://Adw';
 import Gdk from 'gi://Gdk';
-import type Gio from 'gi://Gio';
+import Gio from 'gi://Gio';
 import Gtk from 'gi://Gtk';
 import type { HotCorner } from '../ui/overlay/hot-corner-geometry.js';
 import {
@@ -16,6 +16,7 @@ import {
   withHotCorner,
 } from '../ui/overlay/hot-corner-setting.js';
 import { CORNER_PLACEMENTS, type PictureEdge, pictureSize } from './corner-picture.js';
+import { describeHotCorners } from './hot-corners-description.js';
 
 /**
  * The Cairo calls the picture uses. GJS hands the draw function a Cairo
@@ -39,7 +40,9 @@ interface CairoContext {
 const SCREEN_COLOR = { r: 0.12, g: 0.12, b: 0.14, a: 1 };
 const BEZEL_COLOR = { r: 0.5, g: 0.5, b: 0.55, a: 1 };
 const TOP_BAR_COLOR = { r: 0.78, g: 0.78, b: 0.8, a: 0.9 };
-const SCREEN_RADIUS = 10;
+const SCREEN_RADIUS = 4;
+/** Width of the screen's outline; drawn on half-pixel coordinates to stay crisp. */
+const BEZEL_WIDTH = 1;
 const TOP_BAR_HEIGHT = 8;
 /** Gap between a corner control and the picture's edges (below the top bar on top). */
 const CORNER_MARGIN = 8;
@@ -55,7 +58,7 @@ const CSS = `
   min-width: 0;
   min-height: 0;
   padding: 0;
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
   box-shadow: inset 0 0 0 2px alpha(white, 0.65);
 }
@@ -67,10 +70,6 @@ const CSS = `
 }
 .zatto-corner:checked image { color: @accent_fg_color; }
 .zatto-corner:checked:hover { background: mix(@accent_bg_color, white, 0.15); }
-.zatto-corner-marker {
-  font-size: smaller;
-  color: alpha(white, 0.75);
-}
 `;
 
 let cssInstalled = false;
@@ -133,19 +132,19 @@ function createScreen(width: number, height: number): Gtk.DrawingArea {
   const area = new Gtk.DrawingArea({ content_width: width, content_height: height });
   area.set_draw_func((_area, context, w, h) => {
     const cr = context as unknown as CairoContext;
-    const inset = 1;
+    const inset = BEZEL_WIDTH / 2;
     roundedRect(cr, inset, inset, w - 2 * inset, h - 2 * inset, SCREEN_RADIUS);
     cr.setSourceRGBA(SCREEN_COLOR.r, SCREEN_COLOR.g, SCREEN_COLOR.b, SCREEN_COLOR.a);
     cr.fillPreserve();
     cr.save();
     cr.clip();
     cr.setSourceRGBA(TOP_BAR_COLOR.r, TOP_BAR_COLOR.g, TOP_BAR_COLOR.b, TOP_BAR_COLOR.a);
-    cr.rectangle(0, 0, w, inset + TOP_BAR_HEIGHT);
+    cr.rectangle(0, 0, w, BEZEL_WIDTH + TOP_BAR_HEIGHT);
     cr.fill();
     cr.restore();
     roundedRect(cr, inset, inset, w - 2 * inset, h - 2 * inset, SCREEN_RADIUS);
     cr.setSourceRGBA(BEZEL_COLOR.r, BEZEL_COLOR.g, BEZEL_COLOR.b, BEZEL_COLOR.a);
-    cr.setLineWidth(2);
+    cr.setLineWidth(BEZEL_WIDTH);
     cr.stroke();
   });
   return area;
@@ -165,26 +164,31 @@ function sameList(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((value, i) => value === b[i]);
 }
 
-/** The description shown below the picture for the stored corner set. */
-function describe(corners: readonly HotCorner[]): string {
-  const offeredOn = corners.some((corner) => corner !== 'top-left');
-  const topLeftOn = corners.includes('top-left');
-  let offered = 'Moving the pointer into a corner switched on in the picture opens the depth view.';
-  if (!offeredOn) {
-    offered = topLeftOn
-      ? 'None of the corners you can switch in the picture opens the depth view.'
-      : 'No corner opens the depth view. Switch a corner on in the picture to open it from there.';
+const GNOME_INTERFACE_SCHEMA = 'org.gnome.desktop.interface';
+const GNOME_HOT_CORNERS_KEY = 'enable-hot-corners';
+
+/**
+ * GNOME's own interface settings, or `null` when their schema or the
+ * `enable-hot-corners` key is missing; the page then never mentions GNOME's
+ * hot corner. zatto only reads this setting and never changes it.
+ */
+function openGnomeInterfaceSettings(): Gio.Settings | null {
+  try {
+    const schema = Gio.SettingsSchemaSource.get_default()?.lookup(GNOME_INTERFACE_SCHEMA, true);
+    if (!schema?.has_key(GNOME_HOT_CORNERS_KEY)) {
+      return null;
+    }
+    return new Gio.Settings({ schema_id: GNOME_INTERFACE_SCHEMA });
+  } catch (error) {
+    console.warn(`[Zatto] Cannot read GNOME's hot corner setting: ${error}`);
+    return null;
   }
-  let topLeft = 'The top-left corner is not offered: it opens the Activities overview.';
-  if (topLeftOn) {
-    topLeft = `The top-left corner, set outside this window, opens it${offeredOn ? ' too' : ''}.`;
-  }
-  return `${offered} ${topLeft}`;
 }
 
 /**
- * Build the page. The toggles follow outside changes of the setting while
- * `window` is open; the listener goes away when the window closes.
+ * Build the page. The toggles follow outside changes of the setting, and
+ * the description also follows GNOME's `enable-hot-corners`, while `window`
+ * is open; the listeners go away when the window closes.
  */
 export function createHotCornersPage(
   settings: Gio.Settings,
@@ -206,14 +210,7 @@ export function createHotCornersPage(
   const read = (): HotCorner[] => parseHotCorners(settings.get_strv(HOT_CORNERS_KEY));
 
   const toggles: { corner: HotCorner; toggle: Gtk.ToggleButton }[] = [];
-  for (const { corner, horizontal, vertical, interactive, label } of CORNER_PLACEMENTS) {
-    if (!interactive) {
-      const marker = new Gtk.Label({ label: 'Activities', tooltip_text: label });
-      marker.add_css_class('zatto-corner-marker');
-      placeAtCorner(marker, horizontal, vertical);
-      picture.add_overlay(marker);
-      continue;
-    }
+  for (const { corner, horizontal, vertical, label } of CORNER_PLACEMENTS) {
     const toggle = new Gtk.ToggleButton({
       icon_name: 'object-select-symbolic',
       tooltip_text: label,
@@ -236,6 +233,8 @@ export function createHotCornersPage(
     toggles.push({ corner, toggle });
   }
 
+  const gnomeInterface = openGnomeInterfaceSettings();
+
   const description = new Gtk.Label({ wrap: true, xalign: 0, margin_top: 12 });
   description.add_css_class('dim-label');
 
@@ -252,13 +251,19 @@ export function createHotCornersPage(
         toggle.set_active(active);
       }
     }
-    description.set_label(describe(corners));
+    description.set_label(
+      describeHotCorners(corners, gnomeInterface?.get_boolean(GNOME_HOT_CORNERS_KEY))
+    );
   };
   sync();
 
   const changedId = settings.connect(`changed::${HOT_CORNERS_KEY}`, sync);
+  const gnomeChangedId = gnomeInterface?.connect(`changed::${GNOME_HOT_CORNERS_KEY}`, sync);
   window.connect('close-request', () => {
     settings.disconnect(changedId);
+    if (gnomeChangedId !== undefined) {
+      gnomeInterface?.disconnect(gnomeChangedId);
+    }
     return false;
   });
 
