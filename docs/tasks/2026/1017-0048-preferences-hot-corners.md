@@ -103,11 +103,13 @@ monitors.
 
 ### Before merge (verified outside the check command)
 
-- [ ] After `npm run dev`, `gsettings --schemadir <installed extension>/schemas
+- [x] After `npm run dev`, `gsettings --schemadir <installed extension>/schemas
       set org.gnome.shell.extensions.zatto hot-corners "['top-right']"`
       changes the Inspect snapshot's `hotCorner.corners` to `['top-right']`
       without a reload, and setting it back restores both bottom corners.
-- [ ] `gnome-extensions prefs zatto@x7c1.github.io` opens the preferences
+- [x] `gnome-extensions prefs zatto@x7c1.github.io` opens the preferences
       window; toggling the switches changes which corners open the depth
-      view, live, and the window reads well — needs a person: it is a
-      visual and pointer check on the live session.
+      view, live — needs a person: it is a visual and pointer check on the
+      live session. The author found the switch list hard to map to the
+      screen; a picture of the display with its corners as toggles follows
+      in a separate change.
