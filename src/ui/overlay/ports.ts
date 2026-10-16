@@ -142,7 +142,7 @@ export interface ModalGrabPort {
  * — so external tooling has a stable contract to depend on.
  */
 export interface WindowMirrorSnapshot {
-  /** How many live clones are currently mounted. */
+  /** How many windows are currently mirrored; the transient windows drawn with them are not counted. */
   readonly clonedCount: number;
   /**
    * Epoch ms of the most recent time the mirrored window was activated via a
