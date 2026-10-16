@@ -40,3 +40,6 @@ dist/*.zip
 !.vscode/extensions.json
 .idea
 *.swp
+
+# Release packages (.github/scripts/package-extension.sh)
+*.shell-extension.zip
