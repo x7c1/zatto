@@ -32,25 +32,48 @@ async function build() {
       fs.mkdirSync('dist', { recursive: true });
     }
 
-    await esbuild.build({
-      entryPoints: ['src/extension.ts'],
+    const define = {
+      __DEV__: JSON.stringify(isDev),
+      __BUILD_COMMIT_SHA__: JSON.stringify(commitSha),
+      __BUILD_TIMESTAMP__: JSON.stringify(buildTimestamp),
+    };
+    const common = {
       bundle: true,
-      outfile: 'dist/extension.js',
       platform: 'neutral',
       target: 'es2022',
       format: 'esm',
       treeShaking: false,
       external: ['gi://*', 'resource://*'],
+      logLevel: 'info',
+      define,
+    };
+
+    // extension.js runs inside GNOME Shell.
+    await esbuild.build({
+      ...common,
+      entryPoints: ['src/extension.ts'],
+      outfile: 'dist/extension.js',
       banner: {
         js: '// GNOME Shell Extension - Bundled with esbuild',
       },
-      logLevel: 'info',
-      define: {
-        __DEV__: JSON.stringify(isDev),
-        __BUILD_COMMIT_SHA__: JSON.stringify(commitSha),
-        __BUILD_TIMESTAMP__: JSON.stringify(buildTimestamp),
+    });
+
+    // prefs.js runs in the separate GTK4 / libadwaita preferences process.
+    await esbuild.build({
+      ...common,
+      entryPoints: ['src/prefs.ts'],
+      outfile: 'dist/prefs.js',
+      banner: {
+        js: '// GNOME Shell Extension Preferences - Bundled with esbuild',
       },
     });
+
+    // The extension and its preferences load the settings from
+    // `schemas/gschemas.compiled` next to them, so a schema that does not
+    // compile fails the build rather than shipping without settings.
+    console.log('Compiling GSettings schema...');
+    execSync('glib-compile-schemas --strict dist/schemas/', { stdio: 'inherit' });
+    console.log('✓ Schema compiled');
 
     console.log('✓ Build complete!');
   } catch (error) {

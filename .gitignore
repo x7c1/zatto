@@ -21,10 +21,14 @@ src/**/*.js.map
 # Exception: hand-written ambient type stubs for the GNOME Shell runtime
 !src/gnome-shell-ambient.d.ts
 !src/build-mode.d.ts
+!src/prefs-ambient.d.ts
 
-# Build artifacts in dist/ — keep metadata.json checked in
+# Build artifacts in dist/ — keep metadata.json and the schema source checked
+# in; the compiled schema is a build output
 dist/*
 !dist/metadata.json
+!dist/schemas/
+dist/schemas/gschemas.compiled
 dist/*.zip
 
 # Local files

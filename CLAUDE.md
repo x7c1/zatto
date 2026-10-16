@@ -26,6 +26,8 @@ Fix any issues before considering the task complete.
 2. `npm run copy-files` — copies `dist/*` into `~/.local/share/gnome-shell/extensions/zatto@x7c1.github.io/`.
 3. `npm run reload` — sends a D-Bus `Reload` call to the running extension, which copies itself to `/tmp` under a new UUID and re-enables.
 
+After a reload GNOME Shell no longer knows `zatto@x7c1.github.io`, only the copy, so open the preferences with the copy's UUID: `gnome-extensions prefs "$(gnome-extensions list | grep '^zatto@x7c1.github.io-reload-')"`. The copy reads the same settings, since it carries `schemas/` and the same schema id.
+
 Prerequisites:
 
 - The extension must already be installed and enabled at least once (so the D-Bus interface at `/io/github/x7c1/Zatto` is registered).
@@ -43,4 +45,4 @@ gdbus call --session \
   --method io.github.x7c1.Zatto.Inspect.GetState
 ```
 
-Returns a JSON snapshot (`{ overlay: { state, visible }, hotCorner: { lastEnterAt }, windowMirror: { clonedCount, lastActivatedAt, lastCycledAt, stripCount }, realWindows: { hidden, lastRestoredAt } }`). Intended for ad-hoc inspection during `npm run dev` and, later, for assertions from a nested-shell e2e harness.
+Returns a JSON snapshot (`{ overlay: { state, visible }, hotCorner: { lastEnterAt, corners }, windowMirror: { clonedCount, lastActivatedAt, lastCycledAt, stripCount }, realWindows: { hidden, lastRestoredAt } }`). Intended for ad-hoc inspection during `npm run dev` and, later, for assertions from a nested-shell e2e harness.
