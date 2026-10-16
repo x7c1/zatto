@@ -77,7 +77,7 @@ GTK. Out of scope: secondary monitors, and other settings.
 
 ### Before merge (verified outside the check command)
 
-- [ ] In the preferences window the picture reads as the screen, the
+- [x] In the preferences window the picture reads as the screen, the
       four corner toggles sit at the matching corners, the description
       mentions GNOME's hot corner when top-left is on and GNOME's is on too,
       and toggling a corner changes which
