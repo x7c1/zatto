@@ -6,6 +6,7 @@
  */
 
 /// <reference types="@girs/adw-1/adw-1-ambient" />
+/// <reference types="@girs/gdk-4.0/gdk-4.0-ambient" />
 /// <reference types="@girs/gtk-4.0/gtk-4.0-ambient" />
 
 declare module 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js' {
