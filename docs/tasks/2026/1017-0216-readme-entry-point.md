@@ -92,8 +92,8 @@ one place; the README links rather than repeats).
 
 ### Before merge (verified outside the check command)
 
-- [ ] Every fact of the old Status paragraph is present in
+- [x] Every fact of the old Status paragraph is present in
       `docs/guides/usage.md` — verified by comparing the two texts in the
       PR diff.
-- [ ] The README reads well as the product's front page — needs a person:
+- [x] The README reads well as the product's front page — needs a person:
       it is the author's judgement of tone and emphasis.
