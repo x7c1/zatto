@@ -14,12 +14,15 @@
  *
  * Eligibility:
  *
- *   - A root is a `normal` window with no transient parent, or whose
- *     transient parent is not among the windows described (Mutter can
- *     report a parent that has no window actor); it is drawn if it is not
- *     minimized and is on the current workspace.
+ *   - A root is a window whose type is one of {@link DRAWN_TYPES} and that
+ *     has no transient parent, or whose transient parent is not among the
+ *     windows described (Mutter can report a parent that has no window
+ *     actor); it is drawn if it is not minimized and is on the current
+ *     workspace. A parentless dialog, modal dialog or utility window (an
+ *     extension's preferences window, for one) is a root like a `normal`
+ *     window, as the Activities Overview lists it as a window of its own.
  *   - A transient is attached to a drawn window if its type is one of
- *     {@link ATTACHABLE_TYPES}, its transient parent is that window, it is
+ *     {@link DRAWN_TYPES}, its transient parent is that window, it is
  *     not minimized and it is on the current workspace. Transients of an
  *     attached transient are attached to the same root, recursively.
  *   - Anything else is not drawn: a transient whose parent is not drawn
@@ -37,8 +40,11 @@
 /** The window types the depth view tells apart; every other type is `other`. */
 export type WindowKind = 'normal' | 'dialog' | 'modal-dialog' | 'utility' | 'other';
 
-/** The window types that are attached to their transient parent. */
-const ATTACHABLE_TYPES: ReadonlySet<WindowKind> = new Set([
+/**
+ * The window types that are drawn: as a root when they have no described
+ * transient parent, attached to their parent otherwise.
+ */
+const DRAWN_TYPES: ReadonlySet<WindowKind> = new Set([
   'normal',
   'dialog',
   'modal-dialog',
@@ -104,7 +110,7 @@ export function attachTransients(windows: readonly WindowDescription[]): Attache
 
   windows.forEach((win, index) => {
     const isRoot =
-      win.type === 'normal' && (win.transientFor === null || !indexById.has(win.transientFor));
+      DRAWN_TYPES.has(win.type) && (win.transientFor === null || !indexById.has(win.transientFor));
     if (!isRoot || !isVisible(win)) {
       return;
     }
@@ -114,7 +120,7 @@ export function attachTransients(windows: readonly WindowDescription[]): Attache
     while (pending.length > 0) {
       const next = pending.pop() as number;
       const candidate = windows[next];
-      if (!ATTACHABLE_TYPES.has(candidate.type) || !isVisible(candidate)) {
+      if (!DRAWN_TYPES.has(candidate.type) || !isVisible(candidate)) {
         continue;
       }
       transients.push(next);
@@ -127,4 +133,80 @@ export function attachTransients(windows: readonly WindowDescription[]): Attache
   });
 
   return groups;
+}
+
+/**
+ * Why a window is not drawn:
+ *
+ *   - `unsupported-type`: its type is `other` (menus, tooltips, docks…).
+ *   - `minimized`, `other-workspace`: it is not visible.
+ *   - `parent-not-drawn`: it has a described transient parent that is not
+ *     drawn (or the transient relation is a cycle that no root reaches).
+ *   - `dropped`: the rules above would draw it, but the caller left it out
+ *     of the drawn groups (the mirror drops a window whose rect is empty).
+ */
+export type NotDrawnReason =
+  | 'unsupported-type'
+  | 'minimized'
+  | 'other-workspace'
+  | 'parent-not-drawn'
+  | 'dropped';
+
+/** What became of one window: drawn as a root, attached to one, or not drawn. */
+export type AttachmentOutcome =
+  | { readonly outcome: 'root' }
+  | {
+      readonly outcome: 'attached';
+      /** The id of the root window it is drawn with. */
+      readonly root: number;
+    }
+  | { readonly outcome: 'not-drawn'; readonly reason: NotDrawnReason };
+
+/**
+ * The outcome of every window in `windows` (same order) given the groups
+ * that were actually drawn: normally `attachTransients(windows)`, possibly
+ * with some groups or transients left out by the caller. For diagnostics:
+ * it says why a window is missing from the depth view.
+ */
+export function explainAttachment(
+  windows: readonly WindowDescription[],
+  drawn: readonly AttachedGroup[]
+): AttachmentOutcome[] {
+  const outcomes = new Map<number, AttachmentOutcome>();
+  const drawnIds = new Set<number>();
+  for (const group of drawn) {
+    const root = windows[group.parent].id;
+    outcomes.set(group.parent, { outcome: 'root' });
+    drawnIds.add(root);
+    for (const t of group.transients) {
+      outcomes.set(t, { outcome: 'attached', root });
+      drawnIds.add(windows[t].id);
+    }
+  }
+  const describedIds = new Set(windows.map((win) => win.id));
+
+  return windows.map((win, index): AttachmentOutcome => {
+    const known = outcomes.get(index);
+    if (known !== undefined) {
+      return known;
+    }
+    const notDrawn = (reason: NotDrawnReason) => ({ outcome: 'not-drawn' as const, reason });
+    if (!DRAWN_TYPES.has(win.type)) {
+      return notDrawn('unsupported-type');
+    }
+    if (win.minimized) {
+      return notDrawn('minimized');
+    }
+    if (!win.onCurrentWorkspace) {
+      return notDrawn('other-workspace');
+    }
+    if (
+      win.transientFor !== null &&
+      describedIds.has(win.transientFor) &&
+      !drawnIds.has(win.transientFor)
+    ) {
+      return notDrawn('parent-not-drawn');
+    }
+    return notDrawn('dropped');
+  });
 }
