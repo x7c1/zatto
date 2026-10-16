@@ -84,11 +84,11 @@ only the primary monitor), and the preferences page and GSettings schema
 
 ### Before merge (verified outside the check command)
 
-- [ ] After `npm run dev`, moving the cursor into the bottom-right corner
+- [x] After `npm run dev`, moving the cursor into the bottom-right corner
       of the primary monitor opens the depth view, and the bottom-left
       corner still does.
-- [ ] While the depth view is open, entering either corner closes it, as
+- [x] While the depth view is open, entering either corner closes it, as
       the bottom-left corner does today.
-- [ ] Dismissing via Esc or a click and then re-entering either corner
+- [x] Dismissing via Esc or a click and then re-entering either corner
       opens the view again (no corner stays dead after a close beyond the
       existing debounce).
