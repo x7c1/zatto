@@ -233,6 +233,7 @@ describe('OverlayController', () => {
           lastActivatedAt: null,
           lastCycledAt: null,
           stripCount: 0,
+          windows: [],
         },
         realWindows: { hidden: false, lastRestoredAt: 1_000 },
       });
@@ -252,6 +253,7 @@ describe('OverlayController', () => {
           lastActivatedAt: null,
           lastCycledAt: null,
           stripCount: 0,
+          windows: [],
         },
         realWindows: { hidden: true, lastRestoredAt: 1_000 },
       });
