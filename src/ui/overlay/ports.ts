@@ -22,14 +22,14 @@ import type { ScrollStepDirection } from '../../libs/shell/scroll-stepper.js';
 import type { CycleDirection, Point } from './depth-cycle.js';
 
 /**
- * Bottom-left hot corner. Fires {@link HotCornerPort.onEnter} every time the
- * cursor enters the corner rect; the controller is responsible for debouncing
- * via its FSM.
+ * Hot-corner trigger. Fires {@link HotCornerPort.onEnter} every time the
+ * cursor enters one of its corner rects, whichever corner it is; the
+ * controller is responsible for debouncing via its FSM.
  */
 export interface HotCornerPort {
-  /** Install the trigger actor and start listening. */
+  /** Install the trigger actors and start listening. */
   enable(): void;
-  /** Remove the trigger actor. Must be idempotent. */
+  /** Remove the trigger actors. Must be idempotent. */
   disable(): void;
   /**
    * Register the single enter handler. The port supports exactly one handler
