@@ -1,0 +1,52 @@
+name: Create Release PR
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  create-release-pr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Skip the push that merged a release PR (its squashed commit message
+    # starts with "Release v"): that version is released by release.yml, and
+    # the next push to main opens the following release PR.
+    if: ${{ !startsWith(github.event.head_commit.message, 'Release v') }}
+
+    # Everything this job writes goes through RELEASE_PAT, so its own token
+    # needs no write access.
+    permissions:
+      contents: read
+
+    # One run at a time: two pushes in quick succession must not race on the
+    # release branch.
+    concurrency:
+      group: create-release-pr
+      cancel-in-progress: false
+
+    steps:
+      # No fallback to GITHUB_TOKEN: a PR opened with it is authored by
+      # github-actions[bot], and GitHub does not run pull_request workflows
+      # on such PRs, so CI and Validate Release PR would never report on it.
+      - name: Require RELEASE_PAT
+        env:
+          RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
+        run: |
+          if [ -z "$RELEASE_PAT" ]; then
+            echo "::error::The RELEASE_PAT repository secret is not set. See docs/guides/release.md (\"RELEASE_PAT\")."
+            exit 1
+          fi
+
+      # The credentials persist because create-release-pr.sh pushes the
+      # release branch with them, as the PAT's user.
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT }}
+
+      - name: Create or update release PR
+        run: .github/scripts/create-release-pr.sh
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
