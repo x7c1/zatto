@@ -146,11 +146,7 @@ edits the merged PR, which needs no other workflow to react.
 - **`Create Release PR` failed.** Read the run's log. A missing or expired
   `RELEASE_PAT` fails the first step or the push: renew the secret, then
   re-run the job. The script is idempotent: it rebuilds the branch from
-  `main` on every run. If the push is refused with "refusing to allow a
-  Personal Access Token to create or update workflow", `main` changed a
-  file under `.github/workflows/` since the branch was last built, and
-  GitHub requires the extra **Workflows: Read and write** permission to
-  move a branch across that change: add it to the token and re-run.
+  `main` on every run.
 - **The release PR is stale or broken.** Close it and delete its branch; the
   next push to `main` (or a re-run of the last `Create Release PR` run)
   opens a fresh one.
