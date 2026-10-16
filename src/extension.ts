@@ -10,9 +10,13 @@ import { GnomeModalGrab } from './libs/shell/gnome-modal-grab.js';
 import { CycleStrip } from './ui/overlay/cycle-strip.js';
 import { GnomeRealWindows } from './ui/overlay/gnome-real-windows.js';
 import { GnomeWindowMirror } from './ui/overlay/gnome-window-mirror.js';
+import type { HotCorner } from './ui/overlay/hot-corner-geometry.js';
 import { HotCornerTrigger } from './ui/overlay/hot-corner-trigger.js';
 import { OverlayActor } from './ui/overlay/overlay-actor.js';
 import { OverlayController } from './ui/overlay/overlay-controller.js';
+
+/** Corners of the primary monitor that open the depth view. */
+const ACTIVE_HOT_CORNERS: readonly HotCorner[] = ['bottom-left', 'bottom-right'];
 
 export default class ZattoExtension extends Extension {
   private dbusReloader: DBusReloader | null = null;
@@ -34,7 +38,7 @@ export default class ZattoExtension extends Extension {
 
     const actor = new OverlayActor();
     const modalGrab = new GnomeModalGrab(() => actor.getActor());
-    const hotCorner = new HotCornerTrigger();
+    const hotCorner = new HotCornerTrigger(ACTIVE_HOT_CORNERS);
     const cycleStrip = new CycleStrip(() => actor.getChromeContainer());
     const windowMirror = new GnomeWindowMirror(() => actor.getCloneContainer(), cycleStrip);
     const realWindows = new GnomeRealWindows();
