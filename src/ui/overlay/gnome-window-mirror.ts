@@ -15,6 +15,18 @@
  * windows can reappear under clones that cover them exactly.
  * Clicking a clone activates its window.
  *
+ * Transient windows: a window's dialogs, modal dialogs and utility windows
+ * (see `transient-attachment.ts` for which windows are attached to which
+ * parent) are drawn with it, as the Activities Overview does. Each drawn
+ * window is a group actor holding its own clone and the clones of its
+ * attached transients at their real offsets from it; the group, not the
+ * clone, is what moves, fades and is raised, so the transients follow
+ * their parent through every ease and the focus. A group with transients
+ * is flattened offscreen while translucent, so a dialog does not show its
+ * parent through it. Only the parents take depth slots and are hit-tested;
+ * a click on a transient's clone acts like a click on its parent's, and
+ * activating a parent that has a modal transient activates that one.
+ *
  * Cycling: while the depth view is up, {@link GnomeWindowMirror.cycleAt}
  * moves a single focus through the windows drawn under the cursor. The
  * layout computed at mount stays as it is for as long as the overlay is
@@ -35,17 +47,20 @@
  * click on its clone. When the strip appears and goes away is specified on
  * {@link WindowMirrorPort.hoverAt}.
  *
- * Three Mutter / Clutter API points this mirror sits on top of:
+ * Four Mutter / Clutter API points this mirror sits on top of:
  *
  *   1. `global.get_window_actors()` — enumerate other apps' window actors.
- *   2. `new Clutter.Clone({ source: actor })` — mirror an actor live into
+ *   2. `meta_window.get_transient_for()` — the transient relation that
+ *      attaches dialogs to their parent.
+ *   3. `new Clutter.Clone({ source: actor })` — mirror an actor live into
  *      our overlay's scene graph.
- *   3. `meta_window.activate(global.get_current_time())` — raise the
+ *   4. `meta_window.activate(global.get_current_time())` — raise the
  *      mirrored window when its clone is clicked.
  *
- * Eligibility filter: `NORMAL && !minimized && meta_window != null`. The
- * dimmer and the `HotCornerTrigger` are `St.Widget`s and do not appear in
- * `global.get_window_actors()`, so the overlay never clones itself.
+ * Eligibility: decided by `attachTransients()` over every window actor
+ * with a meta window. The dimmer and the `HotCornerTrigger` are
+ * `St.Widget`s and do not appear in `global.get_window_actors()`, so the
+ * overlay never clones itself.
  */
 
 import Clutter from 'gi://Clutter';
@@ -69,13 +84,36 @@ import {
   type Rect,
 } from './depth-layout.js';
 import type { UnmountOptions, WindowMirrorPort, WindowMirrorSnapshot } from './ports.js';
+import {
+  attachTransients,
+  type WindowDescription,
+  type WindowKind,
+} from './transient-attachment.js';
 
 const EASE_MODE = Clutter.AnimationMode.EASE_OUT_QUAD;
 
-/** A clone we mounted plus the bookkeeping we need to tear it down cleanly. */
-interface MountedClone {
+/** A transient window's clone, drawn inside its parent's group. */
+interface MountedTransient {
   readonly clone: Clutter.Clone;
   readonly win: Meta.Window;
+  readonly clickHandlerId: number;
+}
+
+/**
+ * A drawn window we mounted plus the bookkeeping we need to tear it down
+ * cleanly: its group, its own clone and its attached transients' clones.
+ */
+interface MountedClone {
+  /**
+   * The actor that moves, fades and is raised: a group placed on the
+   * window's buffer rect, holding the window's clone at its origin and
+   * the transients' clones at their offsets from it.
+   */
+  readonly group: Clutter.Actor;
+  readonly clone: Clutter.Clone;
+  readonly win: Meta.Window;
+  /** The window to activate when this one is picked: its modal transient, if any. */
+  readonly activateWin: Meta.Window;
   /** Work-area-relative buffer rect at mount time; the close target fallback. */
   readonly rect: Rect;
   /** Work-area-relative frame rect at mount time; what the layout and hit-testing use. */
@@ -83,6 +121,7 @@ interface MountedClone {
   readonly clickHandlerId: number;
   /** The window actor the clone mirrors; the strip clones it too. */
   readonly source: Meta.WindowActor;
+  readonly transients: readonly MountedTransient[];
 }
 
 export class GnomeWindowMirror implements WindowMirrorPort {
@@ -99,8 +138,8 @@ export class GnomeWindowMirror implements WindowMirrorPort {
   private layout: DepthViewLayout | null = null;
   /** Index into {@link clones} of the focused clone, or `null`. */
   private focused: number | null = null;
-  /** The clone whose click activated its window, painted on top while closing. */
-  private activatedClone: Clutter.Clone | null = null;
+  /** The group whose click activated its window, painted on top while closing. */
+  private activatedGroup: Clutter.Actor | null = null;
   /**
    * The group of windows the strip shows ({@link windowsUnder} order), or
    * `null` while it is hidden. Scrolling on the strip cycles this group.
@@ -151,7 +190,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       return false;
     }
     this.workAreaOrigin = { x: workArea.x, y: workArea.y };
-    this.activatedClone = null;
+    this.activatedGroup = null;
     this.closing = false;
     this.focused = null;
     this.hoverGroup = null;
@@ -160,7 +199,8 @@ export class GnomeWindowMirror implements WindowMirrorPort {
 
     // Bottom-to-top, as `global.get_window_actors()` returns them. Clutter
     // paints children in insertion order and does not depth-sort, so the
-    // topmost window must be added last.
+    // topmost window must be added last. Transient windows are folded into
+    // their parent's entry and take no depth slot.
     // The layout works on frame rects (the visible window), but each clone
     // is placed on the buffer rect: a `Clutter.Clone` scales its source to
     // its own size, and the window actor spans the buffer rect, which
@@ -169,13 +209,25 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     // window visible. A window may extend outside the work area (e.g.
     // under a fixed dock); its clone then starts outside the
     // container, which does not clip, and eases in.
-    const entries = this.collectEligible()
-      .map(({ actor, win }) => ({
-        actor,
-        win,
-        frame: this.frameRectOf(win),
-        rect: this.bufferRectOf(win),
-      }))
+    const all = this.collectWindows();
+    const entries = attachTransients(all.map(({ desc }) => desc))
+      .map(({ parent, transients, activate }) => {
+        const { actor, win } = all[parent];
+        return {
+          actor,
+          win,
+          activateWin: all[activate].win,
+          frame: this.frameRectOf(win),
+          rect: this.bufferRectOf(win),
+          transients: transients
+            .map((t) => ({
+              actor: all[t].actor,
+              win: all[t].win,
+              rect: this.bufferRectOf(all[t].win),
+            }))
+            .filter(({ rect }) => isNonEmpty(rect)),
+        };
+      })
       // Mutter occasionally hands back 0x0 mid-resize. Skip rather than
       // mount an invisible-but-reactive clone.
       .filter(({ frame, rect }) => isNonEmpty(frame) && isNonEmpty(rect));
@@ -194,22 +246,57 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     container.set_scale(1, 1);
     container.set_translation(0, 0, 0);
 
-    entries.forEach(({ actor, win, rect, frame }, index) => {
-      const clone = new Clutter.Clone({
-        source: actor,
-        reactive: true,
-      });
-      clone.set_position(rect.x, rect.y);
+    entries.forEach(({ actor, win, activateWin, rect, frame, transients }, index) => {
+      const group = new Clutter.Actor();
+      group.set_position(rect.x, rect.y);
+      group.opacity = 255;
+      if (transients.length > 0) {
+        // Paint the window and its transients into one buffer while the
+        // group is translucent, so a dialog covers its parent instead of
+        // letting it show through.
+        group.offscreen_redirect = Clutter.OffscreenRedirect.AUTOMATIC_FOR_OPACITY;
+      }
+
+      // Clicks on the window's clone or on any of its transients' clones
+      // pick this entry; the entry is looked up when the click arrives.
+      let mounted: MountedClone | null = null;
+      const connectClick = (target: Clutter.Clone) =>
+        target.connect('button-press-event', () => {
+          if (mounted !== null) {
+            this.activateMounted(mounted);
+          }
+          return Clutter.EVENT_STOP;
+        });
+
+      const clone = new Clutter.Clone({ source: actor, reactive: true });
+      clone.set_position(0, 0);
       clone.set_size(rect.width, rect.height);
-      clone.opacity = 255;
+      const clickHandlerId = connectClick(clone);
+      group.add_child(clone);
 
-      const clickHandlerId = clone.connect('button-press-event', () => {
-        this.activateClone(clone, win);
-        return Clutter.EVENT_STOP;
+      // Above the window's clone, in stacking order, at their real offset.
+      const mountedTransients = transients.map((transient) => {
+        const transientClone = new Clutter.Clone({ source: transient.actor, reactive: true });
+        transientClone.set_position(transient.rect.x - rect.x, transient.rect.y - rect.y);
+        transientClone.set_size(transient.rect.width, transient.rect.height);
+        const transientHandlerId = connectClick(transientClone);
+        group.add_child(transientClone);
+        return { clone: transientClone, win: transient.win, clickHandlerId: transientHandlerId };
       });
 
-      container.add_child(clone);
-      this.clones.push({ clone, win, rect, frame, clickHandlerId, source: actor });
+      container.add_child(group);
+      mounted = {
+        group,
+        clone,
+        win,
+        activateWin,
+        rect,
+        frame,
+        clickHandlerId,
+        source: actor,
+        transients: mountedTransients,
+      };
+      this.clones.push(mounted);
 
       const placement = layout.clones[index];
       const target = {
@@ -218,10 +305,10 @@ export class GnomeWindowMirror implements WindowMirrorPort {
         opacity: placement?.opacity ?? 255,
       };
       if (animate) {
-        clone.ease({ ...target, duration: DEPTH_VIEW_TUNING.transitionMs, mode: EASE_MODE });
+        group.ease({ ...target, duration: DEPTH_VIEW_TUNING.transitionMs, mode: EASE_MODE });
       } else {
-        clone.set_position(target.x, target.y);
-        clone.opacity = target.opacity;
+        group.set_position(target.x, target.y);
+        group.opacity = target.opacity;
       }
     });
 
@@ -282,24 +369,23 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     layout: DepthViewLayout
   ): void {
     const animate = shouldAnimate();
-    const setOpacity = (clone: Clutter.Clone, opacity: number) => {
+    const setOpacity = (group: Clutter.Actor, opacity: number) => {
       if (animate) {
-        clone.ease({ opacity, duration: DEPTH_VIEW_TUNING.cycleMs, mode: EASE_MODE });
+        group.ease({ opacity, duration: DEPTH_VIEW_TUNING.cycleMs, mode: EASE_MODE });
       } else {
-        clone.remove_all_transitions();
-        clone.opacity = opacity;
+        group.remove_all_transitions();
+        group.opacity = opacity;
       }
     };
 
     const previous = this.focused;
     if (previous !== null) {
-      const { clone } = this.clones[previous];
       this.restoreMountPosition(container, previous);
-      setOpacity(clone, layout.clones[previous]?.opacity ?? 255);
+      setOpacity(this.clones[previous].group, layout.clones[previous]?.opacity ?? 255);
     }
-    const { clone } = this.clones[index];
-    container.set_child_above_sibling(clone, null);
-    setOpacity(clone, Math.round(DEPTH_VIEW_TUNING.focusedOpacity * 255));
+    const focusedGroup = this.clones[index].group;
+    container.set_child_above_sibling(focusedGroup, null);
+    setOpacity(focusedGroup, Math.round(DEPTH_VIEW_TUNING.focusedOpacity * 255));
 
     this.focused = index;
     this.lastCycledAt = Date.now();
@@ -373,8 +459,11 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     this.hoverGroup = null;
     this.strip.hide();
     container.remove_all_transitions();
-    for (const { clone } of this.clones) {
-      clone.remove_all_transitions();
+    for (const { group, transients } of this.clones) {
+      group.remove_all_transitions();
+      for (const { clone } of transients) {
+        clone.remove_all_transitions();
+      }
     }
 
     // Undo the focus's raise before the clones land: paint them in the
@@ -384,11 +473,11 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     // The ease below takes every clone to full opacity, so the focus's
     // opacity needs no separate undo.
     this.focused = null;
-    for (const { clone } of this.clones) {
-      container.set_child_above_sibling(clone, null);
+    for (const { group } of this.clones) {
+      container.set_child_above_sibling(group, null);
     }
-    if (this.activatedClone !== null && this.activatedClone.get_parent() === container) {
-      container.set_child_above_sibling(this.activatedClone, null);
+    if (this.activatedGroup !== null && this.activatedGroup.get_parent() === container) {
+      container.set_child_above_sibling(this.activatedGroup, null);
     }
 
     // One count per ease plus one for this loop, so a callback that runs
@@ -418,7 +507,16 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       // A click during the close must not activate another window.
       mounted.clone.reactive = false;
       const target = this.closeTargetOf(mounted);
-      ease(mounted.clone, { x: target.x, y: target.y, opacity: 255 });
+      ease(mounted.group, { x: target.x, y: target.y, opacity: 255 });
+      // Each transient lands on its own window too, in case it moved
+      // relative to its parent while the overlay was open.
+      for (const transient of mounted.transients) {
+        transient.clone.reactive = false;
+        const offset = this.transientOffsetOf(transient, target);
+        if (offset !== null) {
+          ease(transient.clone, offset);
+        }
+      }
     }
     settle();
   }
@@ -453,7 +551,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     if (mounted === undefined) {
       return false;
     }
-    this.activateClone(mounted.clone, mounted.win);
+    this.activateMounted(mounted);
     return true;
   }
 
@@ -477,44 +575,46 @@ export class GnomeWindowMirror implements WindowMirrorPort {
   private showStrip(group: readonly number[]): void {
     this.hoverGroup = group;
     const members: CycleStripMember[] = [...group].reverse().map((index) => {
-      const { clone, win, rect, source } = this.clones[index];
+      const mounted = this.clones[index];
+      const { win, rect, source } = mounted;
       return {
         actor: source,
         size: { width: rect.width, height: rect.height },
         win,
-        onActivate: () => this.activateClone(clone, win),
+        onActivate: () => this.activateMounted(mounted),
       };
     });
     this.strip.show(members, focusWithin(group, this.focused));
   }
 
   /**
-   * Raise `win` and close the overlay; `clone` is painted on top while the
+   * Raise `mounted`'s window (or its modal transient, which holds the
+   * keyboard) and close the overlay; its group is painted on top while the
    * clones ease back, matching the stacking the real windows will have
    * when they reappear.
    */
-  private activateClone(clone: Clutter.Clone, win: Meta.Window): void {
+  private activateMounted(mounted: MountedClone): void {
     if (this.closing) {
       return;
     }
-    this.activatedClone = clone;
-    this.activateWindow(win);
+    this.activatedGroup = mounted.group;
+    this.activateWindow(mounted.activateWin);
     this.onActivated?.();
   }
 
   /**
-   * Put the clone at `index` back at its mount position among the
-   * container's children: directly above the nearest clone below it in
-   * mount order, or at the bottom if there is none. Every other clone is
-   * at its mount position, since at most one clone is ever raised.
+   * Put the group at `index` back at its mount position among the
+   * container's children: directly above the nearest group below it in
+   * mount order, or at the bottom if there is none. Every other group is
+   * at its mount position, since at most one group is ever raised.
    */
   private restoreMountPosition(container: St.Widget, index: number): void {
-    const { clone } = this.clones[index];
-    const below = index > 0 ? this.clones[index - 1].clone : null;
+    const { group } = this.clones[index];
+    const below = index > 0 ? this.clones[index - 1].group : null;
     if (below === null) {
-      container.set_child_below_sibling(clone, null);
+      container.set_child_below_sibling(group, null);
     } else {
-      container.set_child_above_sibling(clone, below);
+      container.set_child_above_sibling(group, below);
     }
   }
 
@@ -536,7 +636,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     this.clones = [];
     this.layout = null;
     this.focused = null;
-    this.activatedClone = null;
+    this.activatedGroup = null;
     this.closing = false;
     this.hoverGroup = null;
     this.onActivated = null;
@@ -590,37 +690,72 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     return mounted.rect;
   }
 
-  /** Walk `global.get_window_actors()` and keep only mirror-worthy entries. */
-  private collectEligible(): { actor: Meta.WindowActor; win: Meta.Window }[] {
-    const out: { actor: Meta.WindowActor; win: Meta.Window }[] = [];
+  /**
+   * Where a transient's clone lands on close, relative to its parent's
+   * group landing on `parentTarget`: its window's current offset from
+   * there, so the real dialog reappears exactly under it. `null` (stay
+   * put) if the window is gone or reports a degenerate rect.
+   */
+  private transientOffsetOf(transient: MountedTransient, parentTarget: Rect): Point | null {
+    try {
+      const rect = this.bufferRectOf(transient.win);
+      if (isNonEmpty(rect)) {
+        return { x: rect.x - parentTarget.x, y: rect.y - parentTarget.y };
+      }
+    } catch (e) {
+      console.warn(`[Zatto] GnomeWindowMirror: transient buffer rect unavailable on close: ${e}`);
+    }
+    return null;
+  }
+
+  /**
+   * Walk `global.get_window_actors()` (bottom to top) and describe every
+   * window for {@link attachTransients}, which decides what is drawn.
+   */
+  private collectWindows(): {
+    actor: Meta.WindowActor;
+    win: Meta.Window;
+    desc: WindowDescription;
+  }[] {
+    const workspace = global.workspace_manager.get_active_workspace();
+    const out: { actor: Meta.WindowActor; win: Meta.Window; desc: WindowDescription }[] = [];
     for (const actor of global.get_window_actors()) {
       const win = actor.get_meta_window();
       if (win === null) {
         continue;
       }
-      if (win.get_window_type() !== Meta.WindowType.NORMAL) {
-        continue;
-      }
-      if (win.minimized) {
-        continue;
-      }
-      out.push({ actor, win });
+      out.push({
+        actor,
+        win,
+        desc: {
+          id: win.get_stable_sequence(),
+          type: kindOf(win.get_window_type()),
+          transientFor: win.get_transient_for()?.get_stable_sequence() ?? null,
+          minimized: win.minimized,
+          onCurrentWorkspace: win.located_on_workspace(workspace),
+        },
+      });
     }
     return out;
   }
 
   /**
-   * Synchronous tear-down for a single mounted clone: disconnects the
-   * click handler, removes the actor from its parent, and destroys it.
+   * Synchronous tear-down for a single mounted window: disconnects the
+   * click handlers, removes its group from its parent, and destroys the
+   * group with the clones in it.
    */
   private disposeClone(mounted: MountedClone): void {
-    mounted.clone.remove_all_transitions();
+    mounted.group.remove_all_transitions();
     mounted.clone.disconnect(mounted.clickHandlerId);
-    const parent = mounted.clone.get_parent();
-    if (parent !== null) {
-      parent.remove_child(mounted.clone);
+    for (const transient of mounted.transients) {
+      transient.clone.remove_all_transitions();
+      transient.clone.disconnect(transient.clickHandlerId);
     }
-    mounted.clone.destroy();
+    const parent = mounted.group.get_parent();
+    if (parent !== null) {
+      parent.remove_child(mounted.group);
+    }
+    mounted.group.destroy();
   }
 
   private activateWindow(win: Meta.Window): void {
@@ -630,6 +765,21 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     } catch (e) {
       console.warn(`[Zatto] GnomeWindowMirror.activate failed: ${e}`);
     }
+  }
+}
+
+function kindOf(type: Meta.WindowType): WindowKind {
+  switch (type) {
+    case Meta.WindowType.NORMAL:
+      return 'normal';
+    case Meta.WindowType.DIALOG:
+      return 'dialog';
+    case Meta.WindowType.MODAL_DIALOG:
+      return 'modal-dialog';
+    case Meta.WindowType.UTILITY:
+      return 'utility';
+    default:
+      return 'other';
   }
 }
 
