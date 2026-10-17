@@ -2,7 +2,8 @@
  * The preferences page that chooses which corners of the primary monitor
  * open the depth view. The corners are picked on a picture of the display:
  * a toggle at each corner writes the whole `hot-corners` list back,
- * and the extension follows the change live.
+ * and the extension follows the change live. The page is the window's
+ * General page; `prefs.ts` adds the other groups below this one.
  */
 
 import Adw from 'gi://Adw';

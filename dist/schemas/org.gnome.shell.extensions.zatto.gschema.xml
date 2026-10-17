@@ -6,5 +6,10 @@
       <summary>Hot corners that open the depth view</summary>
       <description>Corners of the primary monitor that open the depth view when the pointer enters them. Known values are 'top-left', 'top-right', 'bottom-left' and 'bottom-right'; unknown values are ignored. An empty list means no corner opens the depth view.</description>
     </key>
+    <key name="show-top-bar-indicator" type="b">
+      <default>true</default>
+      <summary>Show the top bar indicator</summary>
+      <description>Whether zatto's icon is shown in the top bar. Its menu opens the depth view and the preferences.</description>
+    </key>
   </schema>
 </schemalist>

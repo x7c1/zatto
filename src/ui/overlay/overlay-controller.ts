@@ -184,6 +184,15 @@ export class OverlayController {
   }
 
   /**
+   * Open the depth view on an explicit command (the top bar menu), through
+   * the same open path the hot corner takes. Ignored unless the overlay is
+   * closed; returns whether the open was accepted.
+   */
+  open(): boolean {
+    return this.fsm.open();
+  }
+
+  /**
    * Read-only state snapshot for the D-Bus Inspect endpoint and any other
    * external observers. Cheap to call; allocates a fresh plain object so the
    * caller can serialize it without worrying about aliasing.

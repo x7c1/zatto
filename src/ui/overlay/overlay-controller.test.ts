@@ -77,6 +77,53 @@ describe('OverlayController', () => {
     expect(modalGrab.releaseCount).toBe(1);
   });
 
+  describe('open() (the top bar menu)', () => {
+    it('opens the overlay as a hot-corner enter does', () => {
+      const viaMenu = setup();
+      const viaCorner = setup();
+
+      expect(viaMenu.controller.open()).toBe(true);
+      viaCorner.hotCorner.fireEnter();
+
+      for (const { controller, actor, modalGrab, windowMirror, realWindows } of [
+        viaMenu,
+        viaCorner,
+      ]) {
+        expect(controller.snapshot().overlay).toEqual({ state: 'open', visible: true });
+        expect(actor.isVisible()).toBe(true);
+        expect(modalGrab.isHeld()).toBe(true);
+        expect(windowMirror.mountCount).toBe(1);
+        expect(realWindows.snapshot().hidden).toBe(true);
+      }
+    });
+
+    it('leaves an overlay opened from the menu closable by Esc, back to the desktop', () => {
+      const { controller, actor, modalGrab, realWindows } = setup();
+      controller.open();
+
+      modalGrab.fireEsc();
+
+      expect(controller.snapshot().overlay.state).toBe('closed');
+      expect(actor.isVisible()).toBe(false);
+      expect(modalGrab.isHeld()).toBe(false);
+      expect(realWindows.snapshot().hidden).toBe(false);
+    });
+
+    it('does nothing while the overlay is not closed', () => {
+      const { controller, hotCorner, modalGrab, windowMirror } = setup();
+      windowMirror.deferUnmountDone = true;
+      hotCorner.fireEnter();
+
+      expect(controller.open()).toBe(false);
+      expect(controller.snapshot().overlay.state).toBe('open');
+
+      modalGrab.fireEsc();
+      expect(controller.open()).toBe(false);
+      expect(controller.snapshot().overlay.state).toBe('closing');
+      expect(windowMirror.mountCount).toBe(1);
+    });
+  });
+
   describe('empty press (onEmptyPress)', () => {
     it('closes the overlay and releases the grab while open', () => {
       const { controller, hotCorner, actor, modalGrab, windowMirror } = setup();

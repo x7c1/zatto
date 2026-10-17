@@ -102,6 +102,25 @@ export class OverlayStateMachine {
   }
 
   /**
+   * Request an open (from an explicit command such as the top bar menu).
+   * Only meaningful when the overlay is `closed` — ignored otherwise.
+   * Returns whether it was accepted.
+   *
+   * Like {@link dismiss}, an explicit command is not subject to the debounce
+   * window. It does restart the window, as an accepted toggle does, so a
+   * hot-corner enter synthesized right after cannot close the overlay again.
+   */
+  open(): boolean {
+    if (this.state !== 'closed') {
+      return false;
+    }
+    this.lastAcceptedToggleMs = this.options.now();
+    this.state = 'opening';
+    this.emit({ type: 'open-requested' });
+    return true;
+  }
+
+  /**
    * Request a dismiss (from Esc or a press outside the overlay). Only
    * meaningful when the overlay is `open` — ignored otherwise. Returns whether
    * it was accepted.
