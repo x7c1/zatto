@@ -70,6 +70,14 @@ export interface DepthViewTuning {
    * input to {@link computeDepthLayout} either.
    */
   readonly cycleMs: number;
+  /**
+   * How long the pointer must stay over a different group of windows, or
+   * over empty desktop, before the cycle strip changes to it, in ms. Lets
+   * the pointer cross other windows and gaps on its way to the strip
+   * without the strip changing under it. Not an input to
+   * {@link computeDepthLayout} either.
+   */
+  readonly stripHoverGraceMs: number;
 }
 
 export const DEPTH_VIEW_TUNING: DepthViewTuning = {
@@ -79,6 +87,7 @@ export const DEPTH_VIEW_TUNING: DepthViewTuning = {
   focusedOpacity: 225 / 255,
   transitionMs: 250,
   cycleMs: 150,
+  stripHoverGraceMs: 150,
 };
 
 export interface Rect {

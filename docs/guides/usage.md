@@ -48,7 +48,8 @@ there, as a row of thumbnails along the bottom, frontmost first, with the
 focused one highlighted and titled.
 
 - The strip follows the cursor from window to window and goes away over
-  empty desktop.
+  empty desktop. Once it is up, it waits a moment before changing, so the
+  cursor can cross other windows or gaps on its way down to a thumbnail.
 - Pointing at a thumbnail focuses its window, and clicking it raises that
   window.
 

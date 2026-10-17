@@ -16,6 +16,7 @@ import type {
   RealWindowsPort,
   RealWindowsSnapshot,
   ScrollStep,
+  TimeoutPort,
   UnmountOptions,
   WindowMirrorPort,
   WindowMirrorSnapshot,
@@ -355,5 +356,48 @@ export class FakeRealWindows implements RealWindowsPort {
   private record(call: RealWindowsCall): void {
     this.calls.push(call);
     this.onCall?.(call);
+  }
+}
+
+/**
+ * Manual clock for {@link TimeoutPort}: nothing runs until {@link advance}
+ * moves time past a callback's due time.
+ */
+export class FakeTimeout implements TimeoutPort {
+  private now = 0;
+  private nextId = 0;
+  private readonly scheduled = new Map<number, { dueAt: number; callback: () => void }>();
+
+  schedule(ms: number, callback: () => void): () => void {
+    const id = this.nextId++;
+    this.scheduled.set(id, { dueAt: this.now + ms, callback });
+    return () => {
+      this.scheduled.delete(id);
+    };
+  }
+
+  /** Test helper: how many callbacks are waiting to run. */
+  get pendingCount(): number {
+    return this.scheduled.size;
+  }
+
+  /** Test helper: move time forward by `ms`, running every callback that falls due, in due order. */
+  advance(ms: number): void {
+    const until = this.now + ms;
+    for (;;) {
+      let next: [number, { dueAt: number; callback: () => void }] | null = null;
+      for (const entry of this.scheduled) {
+        if (entry[1].dueAt <= until && (next === null || entry[1].dueAt < next[1].dueAt)) {
+          next = entry;
+        }
+      }
+      if (next === null) {
+        break;
+      }
+      this.scheduled.delete(next[0]);
+      this.now = next[1].dueAt;
+      next[1].callback();
+    }
+    this.now = until;
   }
 }

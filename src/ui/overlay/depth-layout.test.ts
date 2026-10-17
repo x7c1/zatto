@@ -8,6 +8,7 @@ const tuning = {
   focusedOpacity: 225 / 255,
   transitionMs: 250,
   cycleMs: 150,
+  stripHoverGraceMs: 150,
 };
 const area = { width: 1920, height: 1080 };
 /** One level away from the viewer: up and to the left along the 45° axis. */
