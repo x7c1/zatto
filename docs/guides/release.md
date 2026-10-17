@@ -137,7 +137,8 @@ edits the merged PR, which needs no other workflow to react.
   and link rewrite in `release-summary.sh`. Both are pure functions covered by
   `release-version.test.sh` and `release-summary.test.sh`;
   `package-extension.test.sh` builds a release in a temporary copy of the
-  working tree and checks the zip carries `prefs.js` and the compiled schema.
+  working tree and checks the zip carries `prefs.js` and the schema XML but
+  not the compiled schema.
   `CI` runs every `*.test.sh` there. Run them locally with
   `for t in .github/scripts/*.test.sh; do bash "$t"; done`.
 

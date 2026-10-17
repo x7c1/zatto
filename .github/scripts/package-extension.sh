@@ -9,7 +9,10 @@ set -euo pipefail
 # Run after `npm run build:release`. Writes
 # `<uuid>.v<version>.shell-extension.zip` (the name `gnome-extensions pack`
 # would give it) at the repository root, with the files of dist/ at the top
-# level of the archive.
+# level of the archive. The compiled GSettings schema stays out: GNOME Shell
+# 44 and later compile an extension's schemas on install, and
+# extensions.gnome.org asks extensions that support only those versions not
+# to ship the compiled file.
 #
 # Outputs (to $GITHUB_OUTPUT, when set):
 #   filename=<zip file name>
@@ -32,7 +35,7 @@ fi
 
 echo "Packaging extension: ${FILENAME}"
 rm -f "${REPO_ROOT}/${FILENAME}"
-(cd "${REPO_ROOT}/dist" && zip -r "${REPO_ROOT}/${FILENAME}" .)
+(cd "${REPO_ROOT}/dist" && zip -r "${REPO_ROOT}/${FILENAME}" . -x schemas/gschemas.compiled)
 echo "Package created: ${FILENAME}"
 
 echo "filename=${FILENAME}" >> "${GITHUB_OUTPUT:-/dev/null}"

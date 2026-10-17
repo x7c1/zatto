@@ -2,7 +2,8 @@
 set -uo pipefail
 
 # Tests for package-extension.sh: the zip of a release build carries what
-# GNOME Shell needs to load the extension and its settings.
+# GNOME Shell needs to load the extension and its settings, and leaves out the
+# compiled schema.
 #
 # Usage:
 #   bash package-extension.test.sh
@@ -56,8 +57,7 @@ elif ! output=$(cd "$workdir" && bash .github/scripts/package-extension.sh "$uui
 else
     listing=$(unzip -Z1 "$zip_file")
     for entry in metadata.json extension.js prefs.js \
-        schemas/org.gnome.shell.extensions.zatto.gschema.xml \
-        schemas/gschemas.compiled; do
+        schemas/org.gnome.shell.extensions.zatto.gschema.xml; do
         if grep -qxF -- "$entry" <<< "$listing"; then
             pass "the zip contains ${entry}"
         else
@@ -65,6 +65,13 @@ else
 ${listing}"
         fi
     done
+    entry=schemas/gschemas.compiled
+    if grep -qxF -- "$entry" <<< "$listing"; then
+        fail "the zip does not contain ${entry}" "  zip listing:
+${listing}"
+    else
+        pass "the zip does not contain ${entry}"
+    fi
 fi
 
 if [ "$failures" -ne 0 ]; then
