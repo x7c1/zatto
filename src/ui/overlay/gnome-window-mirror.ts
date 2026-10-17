@@ -75,6 +75,7 @@ import {
   cycleFocus,
   focusWithin,
   type Point,
+  sameMembers,
   windowsUnder,
 } from './depth-cycle.js';
 import {
@@ -85,10 +86,12 @@ import {
 } from './depth-layout.js';
 import type {
   ConsideredWindow,
+  TimeoutPort,
   UnmountOptions,
   WindowMirrorPort,
   WindowMirrorSnapshot,
 } from './ports.js';
+import { StripHoverGrace } from './strip-hover-grace.js';
 import {
   type AttachmentOutcome,
   attachTransients,
@@ -165,6 +168,8 @@ export class GnomeWindowMirror implements WindowMirrorPort {
    * the callbacks of a superseded ease become no-ops.
    */
   private generation = 0;
+  /** Delays the strip's changes while it is shown; see {@link hoverAt}. */
+  private readonly stripGrace: StripHoverGrace;
 
   constructor(
     /**
@@ -176,8 +181,22 @@ export class GnomeWindowMirror implements WindowMirrorPort {
      */
     private readonly getContainer: () => St.Widget | null,
     /** The strip of thumbnails of the windows under the pointer. */
-    private readonly strip: CycleStrip
-  ) {}
+    private readonly strip: CycleStrip,
+    timeout: TimeoutPort
+  ) {
+    this.stripGrace = new StripHoverGrace({
+      graceMs: DEPTH_VIEW_TUNING.stripHoverGraceMs,
+      timeout,
+      shown: () => this.hoverGroup,
+      apply: (group) => {
+        if (group === null) {
+          this.hideStrip();
+        } else {
+          this.showStrip(group);
+        }
+      },
+    });
+  }
 
   mount(onActivated: () => void): boolean {
     if (this.clones.length > 0 || this.pendingDone.length > 0) {
@@ -205,6 +224,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     this.activatedGroup = null;
     this.closing = false;
     this.focused = null;
+    this.stripGrace.cancel();
     this.hoverGroup = null;
     this.strip.destroy();
     this.onActivated = onActivated;
@@ -448,6 +468,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     // windows beneath it: keep the strip as it is, or it would be rebuilt
     // for those windows as the pointer reaches a thumbnail.
     if (this.strip.covers(this.toWorkArea(point))) {
+      this.stripGrace.pointerOnStrip();
       // Pointing at a thumbnail focuses its window, so the pointer can pick
       // along the strip as the wheel does; the background, the gaps and
       // the title band leave the focus alone.
@@ -466,17 +487,11 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     }
     // The strip names what a click or Enter would pick here: any window
     // under the pointer, alone or in an overlap, replaces what it shows,
-    // and empty desktop under the pointer takes it down.
-    const group = this.groupAt(point, layout);
-    if (group.length === 0) {
-      this.hoverGroup = null;
-      this.strip.hide();
-      return;
-    }
-    if (this.hoverGroup !== null && sameMembers(this.hoverGroup, group)) {
-      return;
-    }
-    this.showStrip(group);
+    // and empty desktop under the pointer takes it down, once the pointer
+    // has stayed there for the grace period. Until then the strip still
+    // shows the previous group, while a click or Enter acts on what is
+    // under the pointer.
+    this.stripGrace.pointerOver(this.groupAt(point, layout));
   }
 
   unmount(options: UnmountOptions = {}): void {
@@ -494,8 +509,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     // the transitions are removed below and must not tear anything down.
     const generation = ++this.generation;
     this.closing = true;
-    this.hoverGroup = null;
-    this.strip.hide();
+    this.hideStrip();
     container.remove_all_transitions();
     for (const { group, transients } of this.clones) {
       group.remove_all_transitions();
@@ -612,6 +626,8 @@ export class GnomeWindowMirror implements WindowMirrorPort {
    * highlighting the focused member, and remember it as the hover group.
    */
   private showStrip(group: readonly number[]): void {
+    // A scroll may show a group before its grace period ends.
+    this.stripGrace.cancel();
     this.hoverGroup = group;
     const members: CycleStripMember[] = [...group].reverse().map((index) => {
       const mounted = this.clones[index];
@@ -624,6 +640,13 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       };
     });
     this.strip.show(members, focusWithin(group, this.focused));
+  }
+
+  /** Hide the strip, dropping the hover group and any pending change. */
+  private hideStrip(): void {
+    this.stripGrace.cancel();
+    this.hoverGroup = null;
+    this.strip.hide();
   }
 
   /**
@@ -677,6 +700,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     this.focused = null;
     this.activatedGroup = null;
     this.closing = false;
+    this.stripGrace.cancel();
     this.hoverGroup = null;
     this.onActivated = null;
     this.strip.destroy();
@@ -833,10 +857,6 @@ function describeConsidered(
     title: win.get_title() ?? null,
     wmClass: win.get_wm_class() ?? null,
   }));
-}
-
-function sameMembers(a: readonly number[], b: readonly number[]): boolean {
-  return a.length === b.length && a.every((index, i) => index === b[i]);
 }
 
 function isNonEmpty(rect: Rect): boolean {

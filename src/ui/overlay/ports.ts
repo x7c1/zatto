@@ -16,6 +16,7 @@
  * - {@link ModalGrabPort} -> `GnomeModalGrab` (`libs/shell/gnome-modal-grab.ts`)
  * - {@link WindowMirrorPort} -> `GnomeWindowMirror` (`gnome-window-mirror.ts`)
  * - {@link RealWindowsPort} -> `GnomeRealWindows` (`gnome-real-windows.ts`)
+ * - {@link TimeoutPort} -> `GLibTimeout` (`libs/shell/glib-timeout.ts`)
  */
 
 import type { ScrollStepDirection } from '../../libs/shell/scroll-stepper.js';
@@ -247,12 +248,19 @@ export interface WindowMirrorPort {
    * Track the pointer at `point` (stage coordinates) for the cycle strip.
    * Shows the windows drawn under the point, one or more, as a strip of
    * thumbnails along the bottom of the depth view, frontmost first, with
-   * the focused one highlighted, replacing whatever the strip showed
-   * before; a point over no window hides the strip. A point within the
-   * group already shown changes nothing. On the strip itself, a point on a
-   * thumbnail moves the focus to that window (as {@link cycleAt} would) and
-   * a point elsewhere on the strip changes nothing. A no-op with nothing
-   * mounted or while closing.
+   * the focused one highlighted; a point over no window hides the strip.
+   * While no strip is shown, it appears at once. While one is shown, a
+   * point over a different group, or over no window, changes it only after
+   * the `stripHoverGraceMs` grace period of `DEPTH_VIEW_TUNING`, and only
+   * if the pointer is still there by then, so the pointer can cross other
+   * windows or gaps on its way to the strip. A point within the group
+   * already shown cancels a pending change. On the strip itself, a point
+   * on a thumbnail moves the focus to that window (as {@link cycleAt}
+   * would) and a point elsewhere on the strip changes nothing; either way
+   * a pending change is cancelled. A no-op with nothing mounted or while
+   * closing. Only what the strip shows waits for the grace period:
+   * {@link cycleAt} and {@link activateAt} act on what is under the point
+   * when they are called.
    */
   hoverAt(point: Point): void;
   /**
@@ -297,4 +305,17 @@ export interface RealWindowsPort {
   restore(): void;
   /** Cheap state snapshot for the D-Bus Inspect endpoint. */
   snapshot(): RealWindowsSnapshot;
+}
+
+/**
+ * One-shot timer. Injected so the timing decisions built on it run under
+ * vitest with a fake clock.
+ */
+export interface TimeoutPort {
+  /**
+   * Run `callback` once after `ms` milliseconds. Returns a function that
+   * cancels the callback if it has not run yet; calling it later, or more
+   * than once, is harmless.
+   */
+  schedule(ms: number, callback: () => void): () => void;
 }

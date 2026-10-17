@@ -98,3 +98,8 @@ export function focusWithin(group: readonly number[], focused: number | null): n
   const found = focused === null ? -1 : group.indexOf(focused);
   return found === -1 ? 0 : group.length - 1 - found;
 }
+
+/** Whether two groups ({@link windowsUnder} results) hold the same indices in the same order. */
+export function sameMembers(a: readonly number[], b: readonly number[]): boolean {
+  return a.length === b.length && a.every((index, i) => index === b[i]);
+}
