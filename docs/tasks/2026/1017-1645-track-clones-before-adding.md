@@ -47,6 +47,6 @@ keep the change minimal and say so in the report.
 
 ### Before merge (verified outside the check command)
 
-- [ ] Reading the diff confirms that, in `mount()`, every actor created
+- [x] Reading the diff confirms that, in `mount()`, every actor created
       for a window is reachable from the state `unmount()` tears down
       before the first call after its creation that can throw.
