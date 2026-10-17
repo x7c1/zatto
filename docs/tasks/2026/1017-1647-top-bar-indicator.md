@@ -65,7 +65,7 @@ license-related.
 
 ### Before merge (verified outside the check command)
 
-- [ ] After `npm run dev`, toggling `show-top-bar-indicator` with
+- [x] After `npm run dev`, toggling `show-top-bar-indicator` with
       `gsettings` (pointing at the extension's schema directory) adds and
       removes the indicator; GNOME Shell's journal shows no error from
       zatto while doing so.
