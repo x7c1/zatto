@@ -69,8 +69,11 @@ async function build() {
     });
 
     // The extension and its preferences load the settings from
-    // `schemas/gschemas.compiled` next to them, so a schema that does not
-    // compile fails the build rather than shipping without settings.
+    // `schemas/gschemas.compiled` next to them. The release zip leaves it out
+    // (see .github/scripts/package-extension.sh for why), but compiling here
+    // makes a schema that does not compile fail the build, and gives
+    // `npm run dev`, which copies dist/ into the extensions directory, the
+    // compiled file.
     console.log('Compiling GSettings schema...');
     execSync('glib-compile-schemas --strict dist/schemas/', { stdio: 'inherit' });
     console.log('✓ Schema compiled');
