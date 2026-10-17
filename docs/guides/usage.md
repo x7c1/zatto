@@ -1,13 +1,14 @@
 # Usage
 
-How to open zatto's depth view, pick a window in it, and choose the corners
-that open it.
+How to open zatto's depth view, pick a window in it, and set up the corners
+and the top bar indicator that open it.
 
 ## Opening and closing the depth view
 
 Move the pointer into a hot corner of the primary monitor to open the depth
 view. The bottom-left and bottom-right corners do so by default; which
-corners do is set in the [preferences](#choosing-the-corners).
+corners do is set in the [preferences](#preferences). The
+[top bar indicator](#the-top-bar-indicator) opens it too.
 
 When it opens, the real windows are hidden and their clones slide from the
 windows' positions into an oblique, translucent depth view of the stacking
@@ -22,6 +23,16 @@ Any of these closes it:
 
 Closing slides the clones back onto the windows before the real windows
 reappear.
+
+## The top bar indicator
+
+zatto adds an icon of two stacked windows to the top bar. Its menu has:
+
+- **Open Depth View** — opens the depth view, as a hot corner does; it
+  closes in the same ways.
+- **Preferences…** — opens the [preferences](#preferences).
+
+The icon can be hidden in the preferences.
 
 ## The top bar and the dock
 
@@ -63,13 +74,18 @@ their own, and clicking one acts like clicking its parent. Raising a window
 that has a modal dialog activates the dialog, so the keyboard goes where it
 is expected.
 
-## Choosing the corners
+## Preferences
 
-Open the preferences from the Extensions app, or with:
+Open the preferences from the top bar indicator's menu, from the Extensions
+app, or with:
 
 ```bash
 gnome-extensions prefs zatto@x7c1.github.io
 ```
+
+A change applies at once, without logging out.
+
+### Choosing the corners
 
 The page shows a picture of the display with a toggle at each of its four
 corners. A text below the picture says which corners open the depth view.
@@ -78,4 +94,9 @@ GNOME Shell's own Activities hot corner also lives in the top-left corner.
 If you switch zatto's top-left corner on while GNOME's is on too, the text
 says so; you can turn GNOME's off in Settings › Multitasking › Hot Corner.
 
-A change applies at once, without logging out.
+### Showing the top bar indicator
+
+The **Show top bar indicator** switch, under **Top bar**, shows or hides the
+[top bar indicator](#the-top-bar-indicator). It is on by default. With it
+off, the preferences are still reachable from the Extensions app and the
+command above.

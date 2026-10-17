@@ -32,6 +32,14 @@ declare module 'resource:///org/gnome/shell/ui/main.js' {
   export * from '@girs/gnome-shell/dist/ui/main';
 }
 
+declare module 'resource:///org/gnome/shell/ui/panelMenu.js' {
+  export * from '@girs/gnome-shell/dist/ui/panelMenu';
+}
+
+declare module 'resource:///org/gnome/shell/ui/popupMenu.js' {
+  export * from '@girs/gnome-shell/dist/ui/popupMenu';
+}
+
 declare module 'gi://Gio' {
   export * from '@girs/gio-2.0/gio-2.0';
   export { default } from '@girs/gio-2.0/gio-2.0';

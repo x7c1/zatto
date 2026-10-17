@@ -15,7 +15,7 @@ Early development; the first release is v1. zatto supports GNOME Shell 50 only, 
 ## Documentation
 
 - [Installation](docs/guides/installation.md) — install, update and remove a release.
-- [Usage](docs/guides/usage.md) — open the depth view, pick a window, and choose the corners that open it.
+- [Usage](docs/guides/usage.md) — open the depth view, pick a window, and set up the corners and the top bar indicator that open it.
 - [Release](docs/guides/release.md) — how a release is cut (for maintainers).
 
 ## License

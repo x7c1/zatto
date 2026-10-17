@@ -21,6 +21,10 @@ import {
 import { HotCornerTrigger } from './ui/overlay/hot-corner-trigger.js';
 import { OverlayActor } from './ui/overlay/overlay-actor.js';
 import { OverlayController } from './ui/overlay/overlay-controller.js';
+import { GSettingsIndicatorSetting } from './ui/top-bar-indicator/gsettings-indicator-setting.js';
+import { buildIndicatorMenu } from './ui/top-bar-indicator/menu-model.js';
+import { TopBarIndicator } from './ui/top-bar-indicator/top-bar-indicator.js';
+import { TopBarIndicatorManager } from './ui/top-bar-indicator/top-bar-indicator-manager.js';
 
 export default class ZattoExtension extends Extension {
   private dbusReloader: DBusReloader | null = null;
@@ -29,6 +33,7 @@ export default class ZattoExtension extends Extension {
   private realWindows: GnomeRealWindows | null = null;
   private settings: Gio.Settings | null = null;
   private hotCornersChangedId: number | null = null;
+  private topBarIndicator: TopBarIndicatorManager | null = null;
 
   enable() {
     console.log('[Zatto] Extension enabled');
@@ -74,6 +79,9 @@ export default class ZattoExtension extends Extension {
         hotCorner.setCorners(this.readHotCorners());
       }) ?? null;
 
+    this.topBarIndicator = this.createTopBarIndicator(this.overlayController);
+    this.topBarIndicator.enable();
+
     const inspector = this.initializeDBusInspector(
       withHotCornerSet(this.overlayController, hotCorner)
     );
@@ -93,6 +101,11 @@ export default class ZattoExtension extends Extension {
 
     safeDisable('dbusReloader', () => this.dbusReloader?.disable());
     this.dbusReloader = null;
+
+    // The indicator's menu opens the overlay, so it goes before the
+    // controller; it also stops following its setting here.
+    safeDisable('topBarIndicator', () => this.topBarIndicator?.disable());
+    this.topBarIndicator = null;
 
     // Stop following the setting before the trigger goes away with the
     // controller.
@@ -117,15 +130,34 @@ export default class ZattoExtension extends Extension {
    * extension's own directory, which is the `/tmp/<uuid>/` copy when the
    * development reloader runs one; that copy shares the schema id and path,
    * so it sees the same values. Returns `null` (logged) when the schema is
-   * missing, and the extension then runs with the default corners.
+   * missing, and the extension then runs with the schema's defaults.
    */
   private loadSettings(): Gio.Settings | null {
     try {
       return this.getSettings();
     } catch (e) {
-      console.log(`[Zatto] ERROR: Failed to load settings, using default hot corners: ${e}`);
+      console.log(`[Zatto] ERROR: Failed to load settings, using the defaults: ${e}`);
       return null;
     }
+  }
+
+  /**
+   * The manager that shows the top bar indicator while
+   * `show-top-bar-indicator` is on. Its menu opens the preferences window
+   * and the depth view, the latter through the controller as a hot corner
+   * does.
+   */
+  private createTopBarIndicator(controller: OverlayController): TopBarIndicatorManager {
+    const items = buildIndicatorMenu({
+      openDepthView: () => {
+        controller.open();
+      },
+      openPreferences: () => this.openPreferences(),
+    });
+    return new TopBarIndicatorManager(
+      new GSettingsIndicatorSetting(this.settings),
+      () => new TopBarIndicator({ role: this.metadata.uuid, name: 'Zatto', items })
+    );
   }
 
   private readHotCorners(): HotCorner[] {

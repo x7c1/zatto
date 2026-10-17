@@ -73,6 +73,51 @@ describe('OverlayStateMachine', () => {
     });
   });
 
+  describe('open (explicit command)', () => {
+    it('transitions closed -> opening and emits open-requested', () => {
+      const { fsm, events } = setup();
+
+      expect(fsm.open()).toBe(true);
+
+      expect(fsm.getState()).toBe('opening');
+      expect(events).toEqual([{ type: 'open-requested' }]);
+    });
+
+    it('is not subject to the debounce window after a close', () => {
+      const { fsm, advance } = setup({ debounceMs: 200 });
+      fsm.toggle();
+      fsm.commitOpened();
+      fsm.dismiss();
+      fsm.commitClosed();
+      advance(10);
+
+      expect(fsm.toggle()).toBe(false);
+      expect(fsm.open()).toBe(true);
+    });
+
+    it('restarts the debounce window, so a toggle right after cannot close', () => {
+      const { fsm, advance } = setup({ debounceMs: 200 });
+      fsm.open();
+      fsm.commitOpened();
+      advance(10);
+
+      expect(fsm.toggle()).toBe(false);
+      expect(fsm.getState()).toBe('open');
+    });
+
+    it('is ignored unless closed', () => {
+      const { fsm, events } = setup();
+      fsm.toggle();
+      expect(fsm.open()).toBe(false);
+      fsm.commitOpened();
+      expect(fsm.open()).toBe(false);
+      fsm.dismiss();
+      expect(fsm.open()).toBe(false);
+
+      expect(events.filter((e) => e.type === 'open-requested')).toHaveLength(1);
+    });
+  });
+
   describe('dismiss (Esc)', () => {
     it('only acts when open: ignored from closed', () => {
       const { fsm, events } = setup();
