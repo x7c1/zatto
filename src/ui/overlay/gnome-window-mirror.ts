@@ -276,16 +276,6 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     container.set_translation(0, 0, 0);
 
     entries.forEach(({ actor, win, activateWin, rect, frame, transients }, index) => {
-      const group = new Clutter.Actor();
-      group.set_position(rect.x, rect.y);
-      group.opacity = 255;
-      if (transients.length > 0) {
-        // Paint the window and its transients into one buffer while the
-        // group is translucent, so a dialog covers its parent instead of
-        // letting it show through.
-        group.offscreen_redirect = Clutter.OffscreenRedirect.AUTOMATIC_FOR_OPACITY;
-      }
-
       // Clicks on the window's clone or on any of its transients' clones
       // pick this entry; the entry is looked up when the click arrives.
       let mounted: MountedClone | null = null;
@@ -297,34 +287,53 @@ export class GnomeWindowMirror implements WindowMirrorPort {
           return Clutter.EVENT_STOP;
         });
 
-      const clone = new Clutter.Clone({ source: actor, reactive: true });
-      clone.set_position(0, 0);
-      clone.set_size(rect.width, rect.height);
-      const clickHandlerId = connectClick(clone);
-      group.add_child(clone);
+      // Until the entry is in `this.clones`, unmount cannot reach the group,
+      // so a throw while building it must destroy the group here. Each clone
+      // joins the group as soon as it exists, so destroying the group takes
+      // every clone (and the click handlers connected on it) with it.
+      const group = new Clutter.Actor();
+      try {
+        group.set_position(rect.x, rect.y);
+        group.opacity = 255;
+        if (transients.length > 0) {
+          // Paint the window and its transients into one buffer while the
+          // group is translucent, so a dialog covers its parent instead of
+          // letting it show through.
+          group.offscreen_redirect = Clutter.OffscreenRedirect.AUTOMATIC_FOR_OPACITY;
+        }
 
-      // Above the window's clone, in stacking order, at their real offset.
-      const mountedTransients = transients.map((transient) => {
-        const transientClone = new Clutter.Clone({ source: transient.actor, reactive: true });
-        transientClone.set_position(transient.rect.x - rect.x, transient.rect.y - rect.y);
-        transientClone.set_size(transient.rect.width, transient.rect.height);
-        const transientHandlerId = connectClick(transientClone);
-        group.add_child(transientClone);
-        return { clone: transientClone, win: transient.win, clickHandlerId: transientHandlerId };
-      });
+        const clone = new Clutter.Clone({ source: actor, reactive: true });
+        group.add_child(clone);
+        clone.set_position(0, 0);
+        clone.set_size(rect.width, rect.height);
+        const clickHandlerId = connectClick(clone);
 
-      container.add_child(group);
-      mounted = {
-        group,
-        clone,
-        win,
-        activateWin,
-        rect,
-        frame,
-        clickHandlerId,
-        source: actor,
-        transients: mountedTransients,
-      };
+        // Above the window's clone, in stacking order, at their real offset.
+        const mountedTransients = transients.map((transient) => {
+          const transientClone = new Clutter.Clone({ source: transient.actor, reactive: true });
+          group.add_child(transientClone);
+          transientClone.set_position(transient.rect.x - rect.x, transient.rect.y - rect.y);
+          transientClone.set_size(transient.rect.width, transient.rect.height);
+          const transientHandlerId = connectClick(transientClone);
+          return { clone: transientClone, win: transient.win, clickHandlerId: transientHandlerId };
+        });
+
+        container.add_child(group);
+        mounted = {
+          group,
+          clone,
+          win,
+          activateWin,
+          rect,
+          frame,
+          clickHandlerId,
+          source: actor,
+          transients: mountedTransients,
+        };
+      } catch (e) {
+        group.destroy();
+        throw e;
+      }
       this.clones.push(mounted);
 
       const placement = layout.clones[index];
