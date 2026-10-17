@@ -1,7 +1,6 @@
 /**
  * Pure decision for when the cycle strip changes as the pointer moves:
- * at once while no strip is shown, and after a grace period while one is,
- * so the pointer can cross other windows or gaps on its way to the strip.
+ * at once while no strip is shown, and after a grace period while one is.
  * The behaviour is specified on `WindowMirrorPort.hoverAt`; this unit
  * holds the pending change and its timer.
  *

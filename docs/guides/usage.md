@@ -29,11 +29,11 @@ reappear.
 
 zatto adds an icon of two stacked windows to the top bar. Its menu has:
 
-- the [license](#license) status, for example "License: Trial — 23 days
-  of use left" (shown only, not a button);
 - **Open Depth View** — opens the depth view, as a hot corner does; it
   closes in the same ways.
 - **Preferences…** — opens the [preferences](#preferences).
+- below a separator, the [license](#license) status, for example
+  "License: Trial — 23 days of use left" (shown only, not a button).
 
 The icon can be hidden in the preferences.
 
@@ -62,8 +62,8 @@ there, as a row of thumbnails along the bottom, frontmost first, with the
 focused one highlighted and titled.
 
 - The strip follows the cursor from window to window and goes away over
-  empty desktop. Once it is up, it waits a moment before changing, so the
-  cursor can cross other windows or gaps on its way down to a thumbnail.
+  empty desktop. Once it is up, it changes only after the cursor rests for
+  a moment, so it does not flicker while the cursor sweeps across windows.
 - Pointing at a thumbnail focuses its window, and clicking it raises that
   window.
 

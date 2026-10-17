@@ -263,8 +263,7 @@ export interface WindowMirrorPort {
    * While no strip is shown, it appears at once. While one is shown, a
    * point over a different group, or over no window, changes it only after
    * the `stripHoverGraceMs` grace period of `DEPTH_VIEW_TUNING`, and only
-   * if the pointer is still there by then, so the pointer can cross other
-   * windows or gaps on its way to the strip. A point within the group
+   * if the pointer is still there by then. A point within the group
    * already shown cancels a pending change. On the strip itself, a point
    * on a thumbnail moves the focus to that window (as {@link cycleAt}
    * would) and a point elsewhere on the strip changes nothing; either way
