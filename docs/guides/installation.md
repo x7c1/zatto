@@ -37,10 +37,23 @@ gnome-extensions uninstall zatto@x7c1.github.io
 
 ## Development
 
+`npm install` fetches the `@haco-studio` packages from GitHub Packages
+(see `.npmrc`), which needs a GitHub token with the `read:packages` scope
+in `NODE_AUTH_TOKEN`. With the GitHub CLI, add the scope once:
+
+```bash
+gh auth refresh -s read:packages
+```
+
+The license API's base URL is set at build time from the
+`LICENSE_API_BASE_URL` environment variable; without it, the build points
+at `https://license.invalid`, which never answers, so nothing is locked
+(see [License](usage.md#license)).
+
 To run zatto from a working tree instead of a release, install it once:
 
 ```bash
-npm install
+NODE_AUTH_TOKEN=$(gh auth token) npm install
 npm run build && npm run copy-files
 ```
 

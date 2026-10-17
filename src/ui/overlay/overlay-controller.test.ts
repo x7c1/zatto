@@ -9,8 +9,9 @@
  * clone transitions.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { OverlayController } from './overlay-controller.js';
+import type { OpenGatePort } from './ports.js';
 import {
   FakeHotCorner,
   FakeModalGrab,
@@ -19,7 +20,7 @@ import {
   FakeWindowMirror,
 } from './test-fakes.js';
 
-function setup(options: { debounceMs?: number; enable?: boolean } = {}) {
+function setup(options: { debounceMs?: number; enable?: boolean; openGate?: OpenGatePort } = {}) {
   let now = 0;
   let epochNow = 1_000_000;
   const hotCorner = new FakeHotCorner();
@@ -31,6 +32,7 @@ function setup(options: { debounceMs?: number; enable?: boolean } = {}) {
     debounceMs: options.debounceMs ?? 200,
     now: () => now,
     epochNow: () => epochNow,
+    openGate: options.openGate,
   });
   if (options.enable ?? true) {
     controller.enable();
@@ -121,6 +123,75 @@ describe('OverlayController', () => {
       expect(controller.open()).toBe(false);
       expect(controller.snapshot().overlay.state).toBe('closing');
       expect(windowMirror.mountCount).toBe(1);
+    });
+  });
+
+  describe('open gate', () => {
+    it('leaves the overlay closed, with nothing set up, when the gate refuses', () => {
+      const openGate = { allowOpen: vi.fn(() => false) };
+      const { controller, hotCorner, actor, modalGrab, windowMirror, realWindows } = setup({
+        openGate,
+      });
+
+      hotCorner.fireEnter();
+      expect(controller.open()).toBe(false);
+
+      expect(openGate.allowOpen).toHaveBeenCalledTimes(2);
+      expect(controller.snapshot().overlay).toEqual({ state: 'closed', visible: false });
+      expect(actor.isVisible()).toBe(false);
+      expect(modalGrab.acquireCount).toBe(0);
+      expect(windowMirror.mountCount).toBe(0);
+      expect(realWindows.snapshot().hidden).toBe(false);
+    });
+
+    it('debounces hot-corner enters after a refusal', () => {
+      const openGate = { allowOpen: vi.fn(() => false) };
+      const { hotCorner, advance } = setup({ openGate, debounceMs: 100 });
+
+      hotCorner.fireEnter();
+      hotCorner.fireEnter();
+      expect(openGate.allowOpen).toHaveBeenCalledTimes(1);
+
+      advance(150);
+      hotCorner.fireEnter();
+      expect(openGate.allowOpen).toHaveBeenCalledTimes(2);
+    });
+
+    it('returns to closed and rethrows when the gate throws', () => {
+      const error = new Error('gate failed');
+      let fail = true;
+      const openGate = {
+        allowOpen: () => {
+          if (fail) {
+            throw error;
+          }
+          return true;
+        },
+      };
+      const { controller, actor } = setup({ openGate });
+
+      expect(() => controller.open()).toThrow(error);
+      expect(controller.snapshot().overlay.state).toBe('closed');
+      expect(actor.isVisible()).toBe(false);
+
+      fail = false;
+      expect(controller.open()).toBe(true);
+      expect(controller.snapshot().overlay.state).toBe('open');
+    });
+
+    it('is not asked when the overlay closes', () => {
+      const openGate = { allowOpen: vi.fn(() => true) };
+      const { controller, hotCorner, modalGrab, advance } = setup({ openGate, debounceMs: 100 });
+
+      hotCorner.fireEnter();
+      advance(150);
+      hotCorner.fireEnter();
+      advance(150);
+      controller.open();
+      modalGrab.fireEsc();
+
+      expect(openGate.allowOpen).toHaveBeenCalledTimes(2);
+      expect(controller.snapshot().overlay.state).toBe('closed');
     });
   });
 

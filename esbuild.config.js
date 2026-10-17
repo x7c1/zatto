@@ -23,6 +23,14 @@ function readCommitSha() {
   }
 }
 
+/**
+ * Base URL of the license API the license gate talks to, from the
+ * `LICENSE_API_BASE_URL` environment variable. There is no license API yet,
+ * so the fallback is a `.invalid` host, which never resolves: every request
+ * fails as no response, and the gate locks nothing on no response.
+ */
+const licenseApiBaseUrl = process.env.LICENSE_API_BASE_URL || 'https://license.invalid';
+
 const commitSha = readCommitSha();
 const buildTimestamp = new Date().toISOString();
 
@@ -36,6 +44,7 @@ async function build() {
       __DEV__: JSON.stringify(isDev),
       __BUILD_COMMIT_SHA__: JSON.stringify(commitSha),
       __BUILD_TIMESTAMP__: JSON.stringify(buildTimestamp),
+      __LICENSE_API_BASE_URL__: JSON.stringify(licenseApiBaseUrl),
     };
     const common = {
       bundle: true,

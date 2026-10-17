@@ -17,6 +17,7 @@
  * - {@link WindowMirrorPort} -> `GnomeWindowMirror` (`gnome-window-mirror.ts`)
  * - {@link RealWindowsPort} -> `GnomeRealWindows` (`gnome-real-windows.ts`)
  * - {@link TimeoutPort} -> `GLibTimeout` (`libs/shell/glib-timeout.ts`)
+ * - {@link OpenGatePort} -> `LicenseOpenGate` (`licensing/license-open-gate.ts`)
  */
 
 import type { ScrollStepDirection } from '../../libs/shell/scroll-stepper.js';
@@ -39,6 +40,16 @@ export interface HotCornerPort {
    * {@link enable}.
    */
   onEnter(handler: () => void): void;
+}
+
+/**
+ * Decides whether an open of the depth view may go ahead. Asked once for
+ * each open the controller accepts (a hot-corner enter while closed, or
+ * {@link OverlayController.open}), before anything is shown; a `false`
+ * leaves the overlay closed.
+ */
+export interface OpenGatePort {
+  allowOpen(): boolean;
 }
 
 /**

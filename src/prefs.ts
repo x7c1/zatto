@@ -1,6 +1,7 @@
 import type Adw from 'gi://Adw';
 import { ExtensionPreferences } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 import { createHotCornersPage } from './prefs/hot-corners-page.js';
+import { createLicensePage, licenseNeedsAttention } from './prefs/license-page.js';
 import { createTopBarGroup } from './prefs/top-bar-group.js';
 
 export default class ZattoPreferences extends ExtensionPreferences {
@@ -11,5 +12,10 @@ export default class ZattoPreferences extends ExtensionPreferences {
     const page = createHotCornersPage(settings, window);
     page.add(createTopBarGroup(settings));
     window.add(page);
+    const licensePage = createLicensePage(settings, window);
+    window.add(licensePage);
+    if (licenseNeedsAttention(settings)) {
+      window.set_visible_page(licensePage);
+    }
   }
 }

@@ -32,6 +32,10 @@ declare module 'resource:///org/gnome/shell/ui/main.js' {
   export * from '@girs/gnome-shell/dist/ui/main';
 }
 
+declare module 'resource:///org/gnome/shell/ui/messageTray.js' {
+  export * from '@girs/gnome-shell/dist/ui/messageTray';
+}
+
 declare module 'resource:///org/gnome/shell/ui/panelMenu.js' {
   export * from '@girs/gnome-shell/dist/ui/panelMenu';
 }

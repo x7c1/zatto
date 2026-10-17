@@ -30,8 +30,11 @@ jobs:
     # so a fork's branch named `main` would pass it too.
     if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
 
+    # packages: read lets GITHUB_TOKEN install @haco-studio packages from
+    # GitHub Packages (see .npmrc).
     permissions:
       contents: read
+      packages: read
       pull-requests: read
 
     outputs:
@@ -115,6 +118,8 @@ jobs:
       - name: Install dependencies
         if: steps.version-check.outputs.changed == 'true'
         run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # The build compiles the GSettings schema to validate it; the package
       # leaves the compiled file out.

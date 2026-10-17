@@ -1,14 +1,15 @@
 # Usage
 
-How to open zatto's depth view, pick a window in it, and set up the corners
-and the top bar indicator that open it.
+How to open zatto's depth view, pick a window in it, set up the corners and
+the top bar indicator that open it, and activate a license.
 
 ## Opening and closing the depth view
 
 Move the pointer into a hot corner of the primary monitor to open the depth
 view. The bottom-left and bottom-right corners do so by default; which
 corners do is set in the [preferences](#preferences). The
-[top bar indicator](#the-top-bar-indicator) opens it too.
+[top bar indicator](#the-top-bar-indicator) opens it too. While zatto is
+[locked](#when-zatto-is-locked), it does not open.
 
 When it opens, the real windows are hidden and their clones slide from the
 windows' positions into an oblique, translucent depth view of the stacking
@@ -28,6 +29,8 @@ reappear.
 
 zatto adds an icon of two stacked windows to the top bar. Its menu has:
 
+- the [license](#license) status, for example "License: Trial — 23 days
+  of use left" (shown only, not a button);
 - **Open Depth View** — opens the depth view, as a hot corner does; it
   closes in the same ways.
 - **Preferences…** — opens the [preferences](#preferences).
@@ -74,6 +77,37 @@ their own, and clicking one acts like clicking its parent. Raising a window
 that has a modal dialog activates the dialog, so the keyboard goes where it
 is expected.
 
+## License
+
+zatto starts with a trial and keeps running with a license key.
+
+- **Trial** — The trial lasts 30 days of use. A day of use is a day on
+  which you open the depth view (from a hot corner or the top bar menu); it
+  counts once, the first time that day. A notification warns you when 3
+  days and when 1 day are left; its **Open Preferences** button opens the
+  **License** page.
+- **License key** — Activate a license key on the **License** page of the
+  [preferences](#preferences). The page shows the license status and
+  checks the key with the license server.
+- **Offline** — An activated license keeps working offline for 7 days from
+  the last time the device was online.
+- **No answer, no lock** — Only an answer from the license server can
+  expire or invalidate a license. When it does not answer (it is down,
+  unreachable, or retired), zatto keeps the status it had. Once the trial
+  has ended, zatto asks the license server whether it is still there the
+  next time it starts (for example when you log in) while the device is
+  online, and unlocks if the server no longer answers.
+
+### When zatto is locked
+
+zatto is locked when the trial has ended, when the license has expired or
+is no longer valid, or when a device with a license has been offline for
+more than 7 days. Opening the depth view then does nothing but show a
+notification that says why. Unless the cause is being offline (reconnect
+to the internet instead), its **Open Preferences** button opens the
+preferences on the **License** page, where a license key can be activated.
+Activating one unlocks zatto at once, without logging out.
+
 ## Preferences
 
 Open the preferences from the top bar indicator's menu, from the Extensions
@@ -83,7 +117,9 @@ app, or with:
 gnome-extensions prefs zatto@x7c1.github.io
 ```
 
-A change applies at once, without logging out.
+A change applies at once, without logging out. The window has two pages:
+**General**, with the settings below, and **License**, with the
+[license](#license) status and the license key.
 
 ### Choosing the corners
 

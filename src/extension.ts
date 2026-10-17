@@ -3,12 +3,25 @@
 import type Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
-import { EXTENSION_UUID } from './infra/constants.js';
+import {
+  GioNetworkStateProvider,
+  GLibDateProvider,
+  GSettingsLicenseRepository,
+  HttpLicenseApiClient,
+  LicenseOperations,
+  type LicenseState,
+  LicenseStateHandler,
+  SystemDeviceInfoProvider,
+  TrialWarningOperations,
+} from '@haco-studio/gnome-licensing';
+import { EXTENSION_UUID, PRODUCT_NAME } from './infra/constants.js';
 import { DBusInspector, type StateProvider } from './libs/inspector/index.js';
 import { DBusReloader } from './libs/reloader/index.js';
 import { safeDisable } from './libs/safe-disable.js';
 import { GLibTimeout } from './libs/shell/glib-timeout.js';
 import { GnomeModalGrab } from './libs/shell/gnome-modal-grab.js';
+import { LicenseOpenGate } from './licensing/license-open-gate.js';
+import { ShellNotifications } from './licensing/shell-notifications.js';
 import { CycleStrip } from './ui/overlay/cycle-strip.js';
 import { GnomeRealWindows } from './ui/overlay/gnome-real-windows.js';
 import { GnomeWindowMirror } from './ui/overlay/gnome-window-mirror.js';
@@ -34,6 +47,8 @@ export default class ZattoExtension extends Extension {
   private settings: Gio.Settings | null = null;
   private hotCornersChangedId: number | null = null;
   private topBarIndicator: TopBarIndicatorManager | null = null;
+  private notifications: ShellNotifications | null = null;
+  private licenseHandler: LicenseStateHandler | null = null;
 
   enable() {
     console.log('[Zatto] Extension enabled');
@@ -50,6 +65,8 @@ export default class ZattoExtension extends Extension {
     const actor = new OverlayActor();
     const modalGrab = new GnomeModalGrab(() => actor.getActor());
     this.settings = this.loadSettings();
+    this.notifications = new ShellNotifications(() => this.openPreferences());
+    this.licenseHandler = this.createLicenseHandler(this.settings, this.notifications);
     const hotCorner = new HotCornerTrigger(this.readHotCorners());
     const cycleStrip = new CycleStrip(() => actor.getChromeContainer());
     const windowMirror = new GnomeWindowMirror(
@@ -68,6 +85,11 @@ export default class ZattoExtension extends Extension {
       {
         // Monotonic ms — GLib reports microseconds, convert once.
         now: () => GLib.get_monotonic_time() / 1000,
+        // Without a license gate (it could not be set up) every open is
+        // allowed, as when the license API does not answer.
+        openGate: this.licenseHandler
+          ? new LicenseOpenGate(this.licenseHandler, this.notifications, PRODUCT_NAME)
+          : undefined,
       }
     );
     this.overlayController.enable();
@@ -120,6 +142,14 @@ export default class ZattoExtension extends Extension {
     safeDisable('overlayController', () => this.overlayController?.disable());
     this.overlayController = null;
 
+    // The controller's open gate used the license handler; nothing asks it
+    // any more.
+    safeDisable('licenseHandler', () => this.licenseHandler?.dispose());
+    this.licenseHandler = null;
+
+    safeDisable('notifications', () => this.notifications?.destroy());
+    this.notifications = null;
+
     // After the controller has restored the windows, drop the backdrop actor.
     safeDisable('realWindows', () => this.realWindows?.destroy());
     this.realWindows = null;
@@ -142,21 +172,74 @@ export default class ZattoExtension extends Extension {
   }
 
   /**
+   * The license gate: a trial counted in days the depth view is opened, and
+   * a license key activated in the preferences. Its state lives in the
+   * extension's GSettings, which the preferences write directly; the
+   * handler follows those changes, so activating a license unlocks zatto
+   * without a reload. Returns `null` (logged) when it cannot be set up,
+   * and zatto then runs unlocked.
+   */
+  private createLicenseHandler(
+    settings: Gio.Settings | null,
+    notifications: ShellNotifications
+  ): LicenseStateHandler | null {
+    if (settings === null) {
+      console.log('[Zatto] ERROR: No settings to keep the license state in; running unlocked');
+      return null;
+    }
+    let handler: LicenseStateHandler | null = null;
+    try {
+      const repository = new GSettingsLicenseRepository(settings);
+      handler = new LicenseStateHandler(
+        new LicenseOperations(
+          repository,
+          new HttpLicenseApiClient(__LICENSE_API_BASE_URL__),
+          new GLibDateProvider(),
+          new GioNetworkStateProvider(),
+          new SystemDeviceInfoProvider()
+        ),
+        new TrialWarningOperations(repository, notifications, PRODUCT_NAME)
+      );
+      // A lock takes effect on the next open, which shows why.
+      handler.initialize((reason) => {
+        console.log(`[Zatto] Locked by the license gate: ${reason}`);
+      });
+      return handler;
+    } catch (e) {
+      console.log(`[Zatto] ERROR: Failed to set up the license gate, running unlocked: ${e}`);
+      // Drop whatever watchers it had started before failing.
+      safeDisable('licenseHandler', () => handler?.dispose());
+      return null;
+    }
+  }
+
+  /** The license state for the top bar menu, or `null` when it cannot be read. */
+  private readLicenseState(): LicenseState | null {
+    try {
+      return this.licenseHandler?.getLicenseState() ?? null;
+    } catch (e) {
+      console.log(`[Zatto] ERROR: Failed to read the license state: ${e}`);
+      return null;
+    }
+  }
+
+  /**
    * The manager that shows the top bar indicator while
-   * `show-top-bar-indicator` is on. Its menu opens the preferences window
-   * and the depth view, the latter through the controller as a hot corner
-   * does.
+   * `show-top-bar-indicator` is on. Its menu shows the license status and
+   * opens the preferences window and the depth view, the latter through the
+   * controller (and so through the license gate) as a hot corner does.
    */
   private createTopBarIndicator(controller: OverlayController): TopBarIndicatorManager {
-    const items = buildIndicatorMenu({
+    const actions = {
       openDepthView: () => {
         controller.open();
       },
       openPreferences: () => this.openPreferences(),
-    });
+    };
+    const getEntries = () => buildIndicatorMenu({ licenseState: this.readLicenseState(), actions });
     return new TopBarIndicatorManager(
       new GSettingsIndicatorSetting(this.settings),
-      () => new TopBarIndicator({ role: this.metadata.uuid, name: 'Zatto', items })
+      () => new TopBarIndicator({ role: this.metadata.uuid, name: PRODUCT_NAME, getEntries })
     );
   }
 
