@@ -33,15 +33,15 @@ function activate(menu: IndicatorMenuEntry[], label: string): void {
 }
 
 describe('buildIndicatorMenu', () => {
-  it('lists the license status, a separator, "Open Depth View" and "Preferences…", in that order', () => {
+  it('lists "Open Depth View", "Preferences…", a separator and the license status, in that order', () => {
     const { menu } = setup();
     expect(labels(menu)).toEqual([
-      'License: Trial — 30 days of use left',
-      '---',
       'Open Depth View',
       'Preferences…',
+      '---',
+      'License: Trial — 30 days of use left',
     ]);
-    expect(menu.map((entry) => entry.kind)).toEqual(['status', 'separator', 'item', 'item']);
+    expect(menu.map((entry) => entry.kind)).toEqual(['item', 'item', 'separator', 'status']);
   });
 
   it.each<[string, Partial<LicenseState>, string]>([
@@ -71,7 +71,7 @@ describe('buildIndicatorMenu', () => {
   ])('shows the status of %s as a non-interactive row', (_name, overrides, label) => {
     const { menu } = setup(licenseState(overrides));
 
-    expect(menu[0]).toEqual({ kind: 'status', label });
+    expect(menu.at(-1)).toEqual({ kind: 'status', label });
   });
 
   it.each([

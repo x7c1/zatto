@@ -53,7 +53,7 @@ export function buildIndicatorMenu(input: IndicatorMenuInput): IndicatorMenuEntr
   if (licenseState === null) {
     return items;
   }
-  return [licenseStatusEntry(licenseState), { kind: 'separator' }, ...items];
+  return [...items, { kind: 'separator' }, licenseStatusEntry(licenseState)];
 }
 
 /**
