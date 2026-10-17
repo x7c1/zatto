@@ -30,6 +30,7 @@ import { type OverlayState, OverlayStateMachine } from './overlay-state-machine.
 import type {
   HotCornerPort,
   ModalGrabPort,
+  OpenGatePort,
   OverlayActorPort,
   RealWindowsPort,
   RealWindowsSnapshot,
@@ -81,11 +82,14 @@ export interface OverlayControllerOptions {
   readonly epochNow?: EpochClock;
   /** Override the default 250 ms debounce window. Primarily for tests. */
   readonly debounceMs?: number;
+  /** Asked before each open; defaults to allowing every open. */
+  readonly openGate?: OpenGatePort;
 }
 
 export class OverlayController {
   private readonly fsm: OverlayStateMachine;
   private readonly epochNow: EpochClock;
+  private readonly openGate: OpenGatePort | null;
   private unsubscribeFsm: (() => void) | null = null;
   private lastEnterAt: number | null = null;
 
@@ -99,6 +103,7 @@ export class OverlayController {
   ) {
     const debounceMs = options.debounceMs ?? HOTCORNER_DEBOUNCE_MS;
     this.epochNow = options.epochNow ?? (() => Date.now());
+    this.openGate = options.openGate ?? null;
     this.fsm = new OverlayStateMachine({ debounceMs, now: options.now });
   }
 
@@ -186,10 +191,11 @@ export class OverlayController {
   /**
    * Open the depth view on an explicit command (the top bar menu), through
    * the same open path the hot corner takes. Ignored unless the overlay is
-   * closed; returns whether the open was accepted.
+   * closed; returns whether the overlay opened (false as well when the open
+   * gate refused it).
    */
   open(): boolean {
-    return this.fsm.open();
+    return this.fsm.open() && this.fsm.getState() === 'open';
   }
 
   /**
@@ -212,6 +218,9 @@ export class OverlayController {
   }
 
   private handleOpen(): void {
+    if (!this.passesOpenGate()) {
+      return;
+    }
     // Any step of the open may throw (e.g. a Clutter error while cloning a
     // window). A failure must not leave a dimmed screen that no input
     // closes: undo only what has already been set up, restoring the
@@ -261,6 +270,26 @@ export class OverlayController {
       this.fsm.abortOpen();
       throw err;
     }
+  }
+
+  /**
+   * Ask the open gate, before anything is shown. A refusal, or a gate that
+   * throws, returns the FSM from `opening` to `closed`; the throw then
+   * propagates, as a failed open does.
+   */
+  private passesOpenGate(): boolean {
+    if (this.openGate === null) {
+      return true;
+    }
+    let allowed = false;
+    try {
+      allowed = this.openGate.allowOpen();
+    } finally {
+      if (!allowed) {
+        this.fsm.abortOpen();
+      }
+    }
+    return allowed;
   }
 
   private handleClose(): void {

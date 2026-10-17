@@ -63,5 +63,8 @@
     "@girs/freetype2-2.0": "2.0.0-4.0.0-rc.15",
     "@girs/graphene-1.0": "1.0.0-4.0.0-rc.15",
     "@girs/pango-1.0": "1.57.1-4.0.0-rc.15"
+  },
+  "dependencies": {
+    "@haco-studio/gnome-licensing": "0.1.0-next.0"
   }
 }

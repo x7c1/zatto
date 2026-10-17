@@ -11,5 +11,55 @@
       <summary>Show the top bar indicator</summary>
       <description>Whether zatto's icon is shown in the top bar. Its menu opens the depth view and the preferences.</description>
     </key>
+    <key name="license-status" type="s">
+      <default>'trial'</default>
+      <summary>License status</summary>
+      <description>The license gate's status: 'trial', 'trial-expired', 'valid', 'expired' or 'invalid'. Managed by zatto.</description>
+    </key>
+    <key name="license-key" type="s">
+      <default>''</default>
+      <summary>License key</summary>
+      <description>The activated license key. Set from the preferences window.</description>
+    </key>
+    <key name="license-activation-id" type="s">
+      <default>''</default>
+      <summary>License activation id</summary>
+      <description>Activation id the license API returned when the license key was activated. Managed by zatto.</description>
+    </key>
+    <key name="license-valid-until" type="x">
+      <default>0</default>
+      <summary>License valid until</summary>
+      <description>End of the subscription period as last confirmed by the license API, in Unix seconds. Managed by zatto.</description>
+    </key>
+    <key name="license-last-validated" type="x">
+      <default>0</default>
+      <summary>License last validated</summary>
+      <description>Time of the last successful validation against the license API, in Unix seconds. Managed by zatto.</description>
+    </key>
+    <key name="last-online-at" type="x">
+      <default>0</default>
+      <summary>Last online</summary>
+      <description>Last time the device was online, in Unix seconds; 0 means not recorded. A valid license keeps working offline for 7 days from it. Managed by zatto.</description>
+    </key>
+    <key name="trial-days-used" type="i">
+      <default>0</default>
+      <summary>Trial days used</summary>
+      <description>Days of use counted during the trial (0 to 30). A day counts once, the first time the depth view is opened that day. Managed by zatto.</description>
+    </key>
+    <key name="trial-last-used-date" type="s">
+      <default>''</default>
+      <summary>Last trial day counted</summary>
+      <description>The last day counted as a day of use during the trial, as YYYY-MM-DD. Managed by zatto.</description>
+    </key>
+    <key name="trial-warning-last-threshold" type="i">
+      <default>0</default>
+      <summary>Last trial warning</summary>
+      <description>Remaining-day threshold (3 or 1) of the last warning that the trial is about to end; 0 means none yet. Managed by zatto.</description>
+    </key>
+    <key name="trial-probe-result" type="s">
+      <default>'none'</default>
+      <summary>Trial probe result</summary>
+      <description>Whether the license API answered the check made after the trial ended: 'none', 'answered' or 'no-response'. Managed by zatto.</description>
+    </key>
   </schema>
 </schemalist>

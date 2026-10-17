@@ -4,6 +4,14 @@
     "lib": ["ES2022"],
     "module": "ES2022",
     "moduleResolution": "node",
+    "paths": {
+      "@haco-studio/gnome-licensing": [
+        "./node_modules/@haco-studio/gnome-licensing/dist/index.d.ts"
+      ],
+      "@haco-studio/gnome-licensing/prefs": [
+        "./node_modules/@haco-studio/gnome-licensing/dist/prefs.d.ts"
+      ]
+    },
     "outDir": "./.tsc",
     "rootDir": "./src",
     "sourceMap": true,
@@ -29,6 +37,7 @@
     "src/build-mode.d.ts",
     "src/infra/**/*.ts",
     "src/libs/**/*.ts",
+    "src/licensing/**/*.ts",
     "src/prefs/**/*.ts",
     "src/ui/**/*.ts"
   ],

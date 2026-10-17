@@ -14,6 +14,11 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # packages: read lets GITHUB_TOKEN install @haco-studio packages from
+    # GitHub Packages (see .npmrc).
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -28,6 +33,8 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # The build compiles the GSettings schema with glib-compile-schemas.
       - name: Install glib-compile-schemas
