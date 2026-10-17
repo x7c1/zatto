@@ -175,6 +175,21 @@ assert_written "prose containing the word TODO is written" "$(printf '%s\n' \
     '' \
     'Adds a TODO note to the overlay.')"
 
+# Deleting only the sentinel leaves the placeholder sentence, which must not
+# become the release body. The sentence is spelled out literally, like the
+# marker, so this checks the text a reader would see.
+summary_without_sentinel=$(printf '%s\n' \
+    '## Summary' \
+    '' \
+    '_Write the release summary here. It becomes the body of the GitHub Release.' \
+    'Delete the marker comment above once written._')
+assert_unwritten "the placeholder without its sentinel is unwritten" \
+    "$summary_without_sentinel"
+assert_written "a summary mentioning the release summary is written" "$(printf '%s\n' \
+    '## Summary' \
+    '' \
+    'The release summary now lists the depth switcher.')"
+
 # The placeholder round-trips through a generated body.
 generated_body=$(printf '%s\n\n%s\n\n%s\n' \
     "$(summary_placeholder)" \
@@ -190,6 +205,16 @@ if out=$(bash "${SCRIPT_DIR}/validate-release-summary.sh" "$generated_body" 2>&1
     fail "validate-release-summary.sh rejects the placeholder" "  passed: ${out}"
 else
     pass "validate-release-summary.sh rejects the placeholder"
+fi
+
+body_without_sentinel=$(printf '%s\n\n%s\n\n%s\n' \
+    "$summary_without_sentinel" \
+    "$MARKER" \
+    '## Features')
+if out=$(bash "${SCRIPT_DIR}/validate-release-summary.sh" "$body_without_sentinel" 2>&1); then
+    fail "validate-release-summary.sh rejects the placeholder without its sentinel" "  passed: ${out}"
+else
+    pass "validate-release-summary.sh rejects the placeholder without its sentinel"
 fi
 
 if out=$(bash "${SCRIPT_DIR}/validate-release-summary.sh" "$(printf '\n\n%s\n\n## Features\n' "$MARKER")" 2>&1); then
