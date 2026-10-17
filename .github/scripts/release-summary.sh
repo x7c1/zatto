@@ -27,13 +27,19 @@ summary_sentinel() {
     printf '%s\n' '<!-- release-summary:todo -->'
 }
 
+# The first line of the placeholder sentence. A summary that still carries
+# it was not written, even when the sentinel above it has been deleted.
+summary_placeholder_line() {
+    printf '%s\n' '_Write the release summary here. It becomes the body of the GitHub Release.'
+}
+
 # The starting point for a summary nobody has written yet.
 summary_placeholder() {
     cat <<EOF
 ## Summary
 
 $(summary_sentinel)
-_Write the release summary here. It becomes the body of the GitHub Release.
+$(summary_placeholder_line)
 Delete the marker comment above once written._
 EOF
 }
@@ -67,13 +73,19 @@ summary_region() {
 }
 
 # True when the summary cannot serve as a release body: empty, whitespace
-# only once HTML comments are removed, or still carrying the sentinel.
+# only once HTML comments are removed, or still carrying the sentinel or the
+# placeholder sentence.
 summary_is_unwritten() {
     local summary="$1"
-    local sentinel stripped
+    local sentinel placeholder_line stripped
 
     sentinel=$(summary_sentinel)
     if [[ "$summary" == *"$sentinel"* ]]; then
+        return 0
+    fi
+
+    placeholder_line=$(summary_placeholder_line)
+    if [[ "$summary" == *"$placeholder_line"* ]]; then
         return 0
     fi
 

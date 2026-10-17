@@ -87,7 +87,8 @@ check. On a release PR it fails when:
   `Release v1.0.0` fails);
 - `<N>` differs from the branch's `dist/metadata.json` version;
 - `<N>` is not the last tag's number plus one (or `1` with no tag);
-- the summary is empty or still carries `<!-- release-summary:todo -->`.
+- the summary is empty or still carries `<!-- release-summary:todo -->` or
+  the placeholder sentence.
 
 The check blocks the merge only once `validate-title` is a required check in
 `main`'s branch protection; add it there after the workflow has run once.
