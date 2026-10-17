@@ -115,9 +115,9 @@ gate's behavior.
 
 ### Before merge (verified outside the check command)
 
-- [ ] CI on the pull request installs `@haco-studio/gnome-licensing` from
+- [x] CI on the pull request installs `@haco-studio/gnome-licensing` from
       GitHub Packages with `GITHUB_TOKEN` and passes.
-- [ ] After `npm run dev`, the journal shows no error from zatto, the
+- [x] After `npm run dev`, the journal shows no error from zatto, the
       top bar menu shows a trial status row, and `gsettings` (pointed at
       the extension's schema directory) reads the license keys with their
       defaults.
