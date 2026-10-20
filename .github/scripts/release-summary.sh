@@ -33,6 +33,13 @@ summary_placeholder_line() {
     printf '%s\n' '_Write the release summary here. It becomes the body of the GitHub Release.'
 }
 
+# The second line of the placeholder sentence: what to do with it. The
+# sentinel is quoted as a code span so it stays visible when the PR body is
+# rendered.
+summary_placeholder_instruction() {
+    printf '%s\n' "Replace these lines with the summary and delete the \`$(summary_sentinel)\` comment above them._"
+}
+
 # How to fix a summary that summary_is_unwritten rejects, worded for both
 # ways it stays unwritten: the sentinel is still there, or it was deleted but
 # the placeholder sentence was kept. Shared by every check that reports it.
@@ -40,14 +47,16 @@ unwritten_summary_fix() {
     printf '%s\n' "Above the '$(changelog_marker)' marker in the PR body, replace the placeholder text (starting '$(summary_placeholder_line)') with a summary of what changed for users, and delete the '$(summary_sentinel)' comment if it is still there."
 }
 
-# The starting point for a summary nobody has written yet.
+# The starting point for a summary nobody has written yet. Only the first
+# line of the sentence identifies it (summary_placeholder_line), so the
+# second line can be reworded without un-rejecting older bodies.
 summary_placeholder() {
     cat <<EOF
 ## Summary
 
 $(summary_sentinel)
 $(summary_placeholder_line)
-Delete the marker comment above once written._
+$(summary_placeholder_instruction)
 EOF
 }
 

@@ -55,7 +55,7 @@ The release PR body is split by a marker line:
 
 <!-- release-summary:todo -->
 _Write the release summary here. It becomes the body of the GitHub Release.
-Delete the marker comment above once written._
+Replace these lines with the summary and delete the `<!-- release-summary:todo -->` comment above them._
 
 <!-- changelog:auto -->
 

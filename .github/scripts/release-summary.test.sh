@@ -177,14 +177,35 @@ assert_written "prose containing the word TODO is written" "$(printf '%s\n' \
 
 # Deleting only the sentinel leaves the placeholder sentence, which must not
 # become the release body. The sentence is spelled out literally, like the
-# marker, so this checks the text a reader would see.
+# marker, so this checks the text a reader would see. Its second line quotes
+# the sentinel, so this body is caught by the sentinel check as well; the old
+# placeholder below, whose second line does not, is what pins the
+# placeholder-line check.
 summary_without_sentinel=$(printf '%s\n' \
     '## Summary' \
     '' \
     '_Write the release summary here. It becomes the body of the GitHub Release.' \
-    'Delete the marker comment above once written._')
+    'Replace these lines with the summary and delete the `<!-- release-summary:todo -->` comment above them._')
 assert_unwritten "the placeholder without its sentinel is unwritten" \
     "$summary_without_sentinel"
+
+# Bodies generated before the second line was reworded still carry the old
+# one. They are recognised by the first line, so they stay unwritten.
+old_summary_without_sentinel=$(printf '%s\n' \
+    '## Summary' \
+    '' \
+    '_Write the release summary here. It becomes the body of the GitHub Release.' \
+    'Delete the marker comment above once written._')
+assert_unwritten "the old placeholder without its sentinel is unwritten" \
+    "$old_summary_without_sentinel"
+
+# The placeholder tells the author to replace it, not only to delete the
+# sentinel, and names the sentinel as the guide does.
+assert_contains "the placeholder says to replace it and delete the sentinel" \
+    "$(summary_placeholder)" \
+    'Replace these lines with the summary and delete the `<!-- release-summary:todo -->` comment above them._'
+assert_not_contains "the placeholder no longer calls the sentinel the marker comment" \
+    "$(summary_placeholder)" 'Delete the marker comment above once written._'
 assert_written "a summary mentioning the release summary is written" "$(printf '%s\n' \
     '## Summary' \
     '' \
