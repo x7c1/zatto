@@ -20,7 +20,14 @@ import {
   FakeWindowMirror,
 } from './test-fakes.js';
 
-function setup(options: { debounceMs?: number; enable?: boolean; openGate?: OpenGatePort } = {}) {
+function setup(
+  options: {
+    debounceMs?: number;
+    enable?: boolean;
+    openGate?: OpenGatePort;
+    openPreferences?: () => void;
+  } = {}
+) {
   let now = 0;
   let epochNow = 1_000_000;
   const hotCorner = new FakeHotCorner();
@@ -33,6 +40,7 @@ function setup(options: { debounceMs?: number; enable?: boolean; openGate?: Open
     now: () => now,
     epochNow: () => epochNow,
     openGate: options.openGate,
+    openPreferences: options.openPreferences,
   });
   if (options.enable ?? true) {
     controller.enable();
@@ -123,6 +131,53 @@ describe('OverlayController', () => {
       expect(controller.open()).toBe(false);
       expect(controller.snapshot().overlay.state).toBe('closing');
       expect(windowMirror.mountCount).toBe(1);
+    });
+  });
+
+  describe('openPreferences() (the strip preferences button)', () => {
+    it('closes the overlay without activating a window and opens the preferences', () => {
+      const openPreferences = vi.fn();
+      const { controller, hotCorner, modalGrab, windowMirror, realWindows } = setup({
+        openPreferences,
+      });
+      hotCorner.fireEnter();
+
+      expect(controller.openPreferences()).toBe(true);
+
+      expect(openPreferences).toHaveBeenCalledTimes(1);
+      expect(controller.snapshot().overlay).toEqual({ state: 'closed', visible: false });
+      expect(modalGrab.isHeld()).toBe(false);
+      expect(realWindows.snapshot().hidden).toBe(false);
+      expect(windowMirror.activateCalls).toEqual([]);
+      expect(windowMirror.snapshot().lastActivatedAt).toBeNull();
+    });
+
+    it('releases the grab before the preferences window opens', () => {
+      let heldWhenOpened: boolean | null = null;
+      const fixture = setup({
+        openPreferences: () => {
+          heldWhenOpened = fixture.modalGrab.isHeld();
+        },
+      });
+      fixture.hotCorner.fireEnter();
+
+      fixture.controller.openPreferences();
+
+      expect(heldWhenOpened).toBe(false);
+    });
+
+    it('does nothing while the overlay is not open', () => {
+      const openPreferences = vi.fn();
+      const { controller, hotCorner, modalGrab, windowMirror } = setup({ openPreferences });
+
+      expect(controller.openPreferences()).toBe(false);
+
+      windowMirror.deferUnmountDone = true;
+      hotCorner.fireEnter();
+      modalGrab.fireEsc();
+      expect(controller.snapshot().overlay.state).toBe('closing');
+      expect(controller.openPreferences()).toBe(false);
+      expect(openPreferences).not.toHaveBeenCalled();
     });
   });
 

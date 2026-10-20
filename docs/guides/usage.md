@@ -66,6 +66,9 @@ focused one highlighted and titled.
   a moment, so it does not flicker while the cursor sweeps across windows.
 - Pointing at a thumbnail focuses its window, and clicking it raises that
   window.
+- The settings button at the right end of the title row closes the depth
+  view without raising any window, as Esc does, and opens the
+  [preferences](#preferences).
 
 ## Dialogs
 
@@ -110,7 +113,8 @@ Activating one unlocks zatto at once, without logging out.
 
 ## Preferences
 
-Open the preferences from the top bar indicator's menu, from the Extensions
+Open the preferences from the top bar indicator's menu, from the settings
+button on the [thumbnail strip](#the-thumbnail-strip), from the Extensions
 app, or with:
 
 ```bash
@@ -134,5 +138,5 @@ says so; you can turn GNOME's off in Settings › Multitasking › Hot Corner.
 
 The **Show top bar indicator** switch, under **Top bar**, shows or hides the
 [top bar indicator](#the-top-bar-indicator). It is on by default. With it
-off, the preferences are still reachable from the Extensions app and the
-command above.
+off, the preferences are still reachable from the thumbnail strip, the
+Extensions app and the command above.

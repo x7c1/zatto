@@ -68,7 +68,12 @@ export default class ZattoExtension extends Extension {
     this.notifications = new ShellNotifications(() => this.openPreferences());
     this.licenseHandler = this.createLicenseHandler(this.settings, this.notifications);
     const hotCorner = new HotCornerTrigger(this.readHotCorners());
-    const cycleStrip = new CycleStrip(() => actor.getChromeContainer());
+    // The strip's preferences button goes through the controller, which
+    // closes the depth view before the window opens.
+    const cycleStrip = new CycleStrip(
+      () => actor.getChromeContainer(),
+      () => this.overlayController?.openPreferences()
+    );
     const windowMirror = new GnomeWindowMirror(
       () => actor.getCloneContainer(),
       cycleStrip,
@@ -90,6 +95,7 @@ export default class ZattoExtension extends Extension {
         openGate: this.licenseHandler
           ? new LicenseOpenGate(this.licenseHandler, this.notifications, PRODUCT_NAME)
           : undefined,
+        openPreferences: () => this.openPreferences(),
       }
     );
     this.overlayController.enable();

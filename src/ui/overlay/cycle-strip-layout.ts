@@ -13,7 +13,13 @@
  * highlighted window's title, so the title reads against the background
  * whatever lies behind the strip; `titleBottomPx` closes the strip under
  * it, less than the gap above, since text needs less breathing room than
- * a picture. The
+ * a picture. The preferences button, a `buttonSizePx` square, sits at the
+ * right end of the title band; the title keeps `buttonSizePx` plus
+ * `titleButtonGapPx` clear on both sides, so it stays centred on the strip
+ * and never runs under the button. The strip is at least wide enough for
+ * `minTitleWidthPx` of title between the button and its mirror space, all
+ * within the padding; a row of thumbnails narrower than that is centred
+ * in it. The
  * strip's bottom edge sits `bottomMarginPx` above the bottom of the work
  * area, and the strip is centred horizontally. A row that would not fit the work area width minus
  * `bottomMarginPx` on either side is scaled down uniformly (the
@@ -57,6 +63,23 @@ export interface CycleStripTuning {
   /** Space between the title band and the strip's bottom edge, in px. */
   readonly titleBottomPx: number;
   /**
+   * Side of the square preferences button at the right end of the title
+   * band, in px; centred on the band vertically.
+   */
+  readonly buttonSizePx: number;
+  /**
+   * Side of the icon inside the preferences button, in px. Not an input to
+   * {@link computeStripLayout}.
+   */
+  readonly buttonIconSizePx: number;
+  /** Space kept between the title and the preferences button, in px. */
+  readonly titleButtonGapPx: number;
+  /**
+   * Least width left for the title between the button and its mirror
+   * space, in px; sets the strip's minimum width.
+   */
+  readonly minTitleWidthPx: number;
+  /**
    * Duration of the strip's fade in and out, in ms. Not an input to
    * {@link computeStripLayout}; it lives here so all the strip's knobs sit
    * in one place.
@@ -73,6 +96,10 @@ export const CYCLE_STRIP_TUNING: CycleStripTuning = {
   titleGapPx: 16,
   titleHeightPx: 20,
   titleBottomPx: 10,
+  buttonSizePx: 20,
+  buttonIconSizePx: 14,
+  titleButtonGapPx: 8,
+  minTitleWidthPx: 96,
   fadeMs: 150,
 };
 
@@ -83,8 +110,13 @@ export interface StripLayout {
   readonly thumbs: Rect[];
   /** One square per thumbnail, centred on the thumbnail's top edge. */
   readonly icons: Rect[];
-  /** The title band: inside the background, below the thumbnails, within the padding. */
+  /**
+   * The title band: inside the background, below the thumbnails, within
+   * the padding, less the button and its mirror space on the left.
+   */
   readonly title: Rect;
+  /** The preferences button, right-aligned in the title row within the padding. */
+  readonly button: Rect;
 }
 
 /**
@@ -106,6 +138,9 @@ export function computeStripLayout(
     titleGapPx,
     titleHeightPx,
     titleBottomPx,
+    buttonSizePx,
+    titleButtonGapPx,
+    minTitleWidthPx,
   } = tuning;
   const bottom = area.height - bottomMarginPx;
   if (sizes.length === 0) {
@@ -114,6 +149,7 @@ export function computeStripLayout(
       thumbs: [],
       icons: [],
       title: { x: area.width / 2, y: bottom, width: 0, height: 0 },
+      button: { x: area.width / 2, y: bottom, width: 0, height: 0 },
     };
   }
 
@@ -126,7 +162,11 @@ export function computeStripLayout(
   const scale = totalWidth > 0 && totalWidth > available ? Math.max(0, available) / totalWidth : 1;
 
   const thumbHeight = thumbHeightPx * scale;
-  const stripWidth = totalWidth * scale + fixed;
+  const rowWidth = totalWidth * scale + thumbGapPx * (sizes.length - 1);
+  // The button on the right and as much space on the left keep the title
+  // centred on the strip.
+  const titleInset = paddingPx + buttonSizePx + titleButtonGapPx;
+  const stripWidth = Math.max(rowWidth + 2 * paddingPx, 2 * titleInset + minTitleWidthPx);
   // Room above the thumbnails for the half of each icon that sticks out,
   // then the title band and its own spacing below them.
   const top = paddingPx + iconSizePx / 2;
@@ -138,7 +178,8 @@ export function computeStripLayout(
     height: stripHeight,
   };
 
-  let x = strip.x + paddingPx;
+  // Centred, for a row the minimum width leaves room around.
+  let x = strip.x + (stripWidth - rowWidth) / 2;
   const thumbs = widths.map((w) => {
     const width = w * scale;
     const rect = { x, y: strip.y + top, width, height: thumbHeight };
@@ -151,11 +192,18 @@ export function computeStripLayout(
     width: iconSizePx,
     height: iconSizePx,
   }));
+  const titleY = strip.y + top + thumbHeight + titleGapPx;
   const title = {
-    x: strip.x + paddingPx,
-    y: strip.y + top + thumbHeight + titleGapPx,
-    width: stripWidth - 2 * paddingPx,
+    x: strip.x + titleInset,
+    y: titleY,
+    width: stripWidth - 2 * titleInset,
     height: titleHeightPx,
   };
-  return { strip, thumbs, icons, title };
+  const button = {
+    x: strip.x + stripWidth - paddingPx - buttonSizePx,
+    y: titleY + (titleHeightPx - buttonSizePx) / 2,
+    width: buttonSizePx,
+    height: buttonSizePx,
+  };
+  return { strip, thumbs, icons, title, button };
 }

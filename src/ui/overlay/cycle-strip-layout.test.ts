@@ -10,6 +10,10 @@ const tuning = {
   titleGapPx: 16,
   titleHeightPx: 20,
   titleBottomPx: 10,
+  buttonSizePx: 20,
+  buttonIconSizePx: 14,
+  titleButtonGapPx: 8,
+  minTitleWidthPx: 96,
   fadeMs: 150,
 };
 const area = { width: 1920, height: 1080 };
@@ -56,12 +60,62 @@ describe('computeStripLayout', () => {
     expect(strip.y + strip.height).toBe(1080 - 24);
     expect(thumbs[0].x).toBe(strip.x + 12);
     expect(thumbs[0].y).toBe(strip.y + 12 + 16);
+    // Inset by the padding, the 20 px button and its 8 px gap on both sides.
     expect(title).toEqual({
-      x: strip.x + 12,
+      x: strip.x + 12 + 20 + 8,
       y: strip.y + 12 + 16 + 120 + 16,
-      width: 322 - 24,
+      width: 322 - 2 * (12 + 20 + 8),
       height: 20,
     });
+  });
+
+  it('right-aligns the button in the title row within the padding', () => {
+    const { strip, title, button } = computeStripLayout(
+      [
+        { width: 1600, height: 1200 },
+        { width: 800, height: 800 },
+      ],
+      area,
+      tuning
+    );
+
+    expect(button).toEqual({
+      x: strip.x + strip.width - 12 - 20,
+      y: title.y,
+      width: 20,
+      height: 20,
+    });
+  });
+
+  it('keeps the title centred on the strip and clear of the button', () => {
+    const { strip, title, button } = computeStripLayout(
+      [{ width: 1920, height: 1080 }],
+      area,
+      tuning
+    );
+
+    expect(title.x + title.width / 2).toBe(strip.x + strip.width / 2);
+    expect(title.x + title.width + 8).toBe(button.x);
+  });
+
+  it('widens a one-thumbnail strip to fit the button and a readable title', () => {
+    // A portrait window: its thumbnail is only 60 px wide.
+    const { strip, thumbs, title, button } = computeStripLayout(
+      [{ width: 600, height: 1200 }],
+      area,
+      tuning
+    );
+
+    // 2 · (12 padding + 20 button + 8 gap) + 96 title.
+    expect(strip.width).toBe(176);
+    expect(strip.x).toBe((1920 - 176) / 2);
+    expect(title.width).toBe(96);
+    expect(title.x + title.width / 2).toBe(strip.x + strip.width / 2);
+    expect(title.x + title.width).toBeLessThanOrEqual(button.x);
+    expect(button.x + button.width).toBe(strip.x + strip.width - 12);
+    // The thumbnail keeps its size and is centred in the wider strip.
+    expect(thumbs[0].width).toBe(60);
+    expect(thumbs[0].x + thumbs[0].width / 2).toBe(strip.x + strip.width / 2);
   });
 
   it('centres each icon on the top edge of its thumbnail', () => {
@@ -108,6 +162,7 @@ describe('computeStripLayout', () => {
       thumbs: [],
       icons: [],
       title: { x: 960, y: 1056, width: 0, height: 0 },
+      button: { x: 960, y: 1056, width: 0, height: 0 },
     });
   });
 });

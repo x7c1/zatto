@@ -3,7 +3,8 @@
  * view showing the windows under the cursor, frontmost on the left, each
  * with its app icon on its top edge, with a translucent rounded highlight
  * behind the focused one, as the Alt+Tab switcher marks its selection, and
- * its title in a band under the thumbnails, inside the same background.
+ * its title in a band under the thumbnails, inside the same background,
+ * and a preferences button at the right end of that band.
  *
  * Owned by `GnomeWindowMirror`, which decides when to show, highlight and
  * hide it. The strip is parented to the overlay's chrome container (see
@@ -12,8 +13,9 @@
  *
  * Each thumbnail is a reactive `Clutter.Clone` of the whole window actor,
  * so client-side shadows are included. A press on a thumbnail runs its
- * member's callback and stops the event; a press elsewhere on the strip
- * does nothing.
+ * member's callback and stops the event; a press on the preferences
+ * button runs the strip's `onOpenPreferences` and stops the event; a press
+ * elsewhere on the strip does nothing.
  */
 
 import Clutter from 'gi://Clutter';
@@ -31,6 +33,9 @@ const EASE_MODE = Clutter.AnimationMode.EASE_OUT_QUAD;
 const BACKGROUND_STYLE = 'background-color: rgba(30, 30, 30, 0.85); border-radius: 12px;';
 const HIGHLIGHT_STYLE = 'background-color: rgba(255, 255, 255, 0.2); border-radius: 10px;';
 const TITLE_STYLE = 'color: white;';
+const BUTTON_STYLE = 'border-radius: 6px;';
+const BUTTON_HOVER_STYLE = `${BUTTON_STYLE} background-color: rgba(255, 255, 255, 0.2);`;
+const BUTTON_ICON_STYLE = 'color: white;';
 /** How far the highlight extends beyond the highlighted thumbnail and its icon, in px. */
 const HIGHLIGHT_PAD_PX = 6;
 
@@ -55,6 +60,7 @@ interface Shown {
   readonly members: readonly CycleStripMember[];
   readonly highlight: St.Widget;
   readonly label: St.Label;
+  readonly button: St.Button;
 }
 
 export class CycleStrip {
@@ -68,7 +74,12 @@ export class CycleStrip {
      * container. A getter, so the strip never holds a container across the
      * overlay's teardown.
      */
-    private readonly getContainer: () => St.Widget | null
+    private readonly getContainer: () => St.Widget | null,
+    /**
+     * Run when the preferences button is pressed: closes the depth view
+     * and opens the preferences window.
+     */
+    private readonly onOpenPreferences: () => void
   ) {}
 
   /** How many thumbnails are shown, 0 when hidden. */
@@ -184,6 +195,10 @@ export class CycleStrip {
     setRect(titleBin, layout.title);
     root.add_child(titleBin);
 
+    const button = this.createPreferencesButton();
+    setRect(button, layout.button);
+    root.add_child(button);
+
     container.add_child(root);
     this.shown = {
       root,
@@ -193,6 +208,7 @@ export class CycleStrip {
       members,
       highlight,
       label,
+      button,
     };
     this.setHighlight(highlighted);
 
@@ -235,6 +251,7 @@ export class CycleStrip {
     for (const thumb of shown.thumbs) {
       thumb.reactive = false;
     }
+    shown.button.reactive = false;
     const { root } = shown;
     if (!shouldAnimate()) {
       destroyRoot(root);
@@ -265,6 +282,36 @@ export class CycleStrip {
     for (const root of roots) {
       destroyRoot(root);
     }
+  }
+
+  /**
+   * The preferences button: the stock settings icon on a background that
+   * shows only under the pointer. It acts on the press, as the thumbnails
+   * do, and stops it, so it does not reach the clones beneath; as the
+   * press's target it is not a press on nothing for the modal grab either.
+   */
+  private createPreferencesButton(): St.Button {
+    const button = new St.Button({
+      style: BUTTON_STYLE,
+      reactive: true,
+      track_hover: true,
+      can_focus: false,
+      child: new St.Icon({
+        icon_name: 'preferences-system-symbolic',
+        icon_size: CYCLE_STRIP_TUNING.buttonIconSizePx,
+        style: BUTTON_ICON_STYLE,
+      }),
+    });
+    button.cursor_type = Clutter.CursorType.POINTER;
+    // Inline styles have no :hover, so the hover background is swapped in.
+    button.connect('notify::hover', () => {
+      button.style = button.hover ? BUTTON_HOVER_STYLE : BUTTON_STYLE;
+    });
+    button.connect('button-press-event', () => {
+      this.onOpenPreferences();
+      return Clutter.EVENT_STOP;
+    });
+    return button;
   }
 }
 
