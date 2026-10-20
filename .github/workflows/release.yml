@@ -88,7 +88,7 @@ jobs:
           pr_body=$(gh pr view "$pr_number" --json body --jq '.body')
           summary=$(summary_region "$pr_body")
           if summary_is_unwritten "$summary"; then
-            echo "::error::Release PR #${pr_number} carries no release summary. Write it above the '$(changelog_marker)' marker in the PR body and delete the '$(summary_sentinel)' comment, then re-run this workflow. See docs/guides/release.md."
+            echo "::error::Release PR #${pr_number} carries no release summary. $(unwritten_summary_fix) Then re-run this workflow. See docs/guides/release.md."
             exit 1
           fi
 

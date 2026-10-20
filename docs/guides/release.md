@@ -153,8 +153,10 @@ edits the merged PR, which needs no other workflow to react.
   next push to `main` (or a re-run of the last `Create Release PR` run)
   opens a fresh one.
 - **`Validate Release PR` failed.** The log names the rule. An unwritten
-  summary is fixed by editing the description. A wrong title or version
-  means the title or the branch was changed by hand: re-run the last
+  summary is fixed by editing the description: replace the placeholder and
+  delete the `<!-- release-summary:todo -->` comment, as in
+  [Release summary](#release-summary). A wrong title or version means the
+  title or the branch was changed by hand: re-run the last
   `Create Release PR` run (or push to `main`) to retitle and rebuild it.
 - **`Release` did not run.** It runs only after a green `CI` on `main`. Fix
   `CI`, then re-run the failed `CI` run on the release commit; the `Release`

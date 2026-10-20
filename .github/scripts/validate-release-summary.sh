@@ -39,7 +39,7 @@ main() {
     summary=$(summary_region "$body")
 
     if summary_is_unwritten "$summary"; then
-        printf '::error::%s\n' "The release PR has no release summary. Write it above the '$(changelog_marker)' marker in the PR body and delete the '$(summary_sentinel)' comment: that text is published as the GitHub Release body. See docs/guides/release.md."
+        printf '::error::%s\n' "The release PR has no release summary. $(unwritten_summary_fix) See docs/guides/release.md."
         return 1
     fi
 
