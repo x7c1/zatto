@@ -66,6 +66,14 @@ export class ShellNotifications implements NotificationService, LockedNoticePort
     this.notify(notification);
   }
 
+  /**
+   * Whether the last locked notice is still in the tray. Dismissing a
+   * notification, or the source going, destroys it, which clears it here.
+   */
+  isLockedShown(): boolean {
+    return this.lockedNotice !== null;
+  }
+
   /** Remove zatto's notifications and its source from the tray. */
   destroy(): void {
     this.lockedNotice = null;

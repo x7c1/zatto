@@ -105,6 +105,43 @@ describe.each(Object.entries(OPENERS))('opening the depth view from %s', (_name,
   });
 });
 
+describe('the locked notice', () => {
+  it('is not shown again from the hot corner while the previous one is in the tray', () => {
+    const s = setup('trial-expired');
+    s.hotCorner.fireEnter();
+    s.advance(150);
+
+    s.hotCorner.fireEnter();
+
+    expect(s.controller.snapshot().overlay.state).toBe('closed');
+    expect(s.license.useCount()).toBe(2);
+    expect(s.notice.shown).toHaveLength(1);
+  });
+
+  it('is shown again from the hot corner once the previous one has left the tray', () => {
+    const s = setup('trial-expired');
+    s.hotCorner.fireEnter();
+    s.advance(150);
+    s.notice.dismiss();
+
+    s.hotCorner.fireEnter();
+
+    expect(s.notice.shown).toHaveLength(2);
+    expect(s.notice.isLockedShown()).toBe(true);
+  });
+
+  it('is shown on every request from the top bar menu, even while one is in the tray', () => {
+    const s = setup('trial-expired');
+    s.hotCorner.fireEnter();
+
+    s.controller.open();
+    s.controller.open();
+
+    expect(s.controller.snapshot().overlay.state).toBe('closed');
+    expect(s.notice.shown).toHaveLength(3);
+  });
+});
+
 describe('LicenseOpenGate', () => {
   it('does not lock when recording the use fails', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});

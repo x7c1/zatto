@@ -31,6 +31,7 @@ import type {
   HotCornerPort,
   ModalGrabPort,
   OpenGatePort,
+  OpenSource,
   OverlayActorPort,
   RealWindowsPort,
   RealWindowsSnapshot,
@@ -119,7 +120,8 @@ export class OverlayController {
     this.unsubscribeFsm = this.fsm.onEvent((event) => {
       switch (event.type) {
         case 'open-requested':
-          this.handleOpen();
+          // Only the hot corner toggles; an explicit command opens.
+          this.handleOpen(event.via === 'toggle' ? 'hot-corner' : 'request');
           break;
         case 'close-requested':
           this.handleClose();
@@ -235,8 +237,8 @@ export class OverlayController {
     };
   }
 
-  private handleOpen(): void {
-    if (!this.passesOpenGate()) {
+  private handleOpen(source: OpenSource): void {
+    if (!this.passesOpenGate(source)) {
       return;
     }
     // Any step of the open may throw (e.g. a Clutter error while cloning a
@@ -295,13 +297,13 @@ export class OverlayController {
    * throws, returns the FSM from `opening` to `closed`; the throw then
    * propagates, as a failed open does.
    */
-  private passesOpenGate(): boolean {
+  private passesOpenGate(source: OpenSource): boolean {
     if (this.openGate === null) {
       return true;
     }
     let allowed = false;
     try {
-      allowed = this.openGate.allowOpen();
+      allowed = this.openGate.allowOpen(source);
     } finally {
       if (!allowed) {
         this.fsm.abortOpen();

@@ -35,7 +35,7 @@ describe('OverlayStateMachine', () => {
 
       expect(accepted).toBe(true);
       expect(fsm.getState()).toBe('opening');
-      expect(events).toEqual([{ type: 'open-requested' }]);
+      expect(events).toEqual([{ type: 'open-requested', via: 'toggle' }]);
     });
 
     it('reaches open after the glue commits', () => {
@@ -43,7 +43,7 @@ describe('OverlayStateMachine', () => {
       fsm.toggle();
       fsm.commitOpened();
       expect(fsm.getState()).toBe('open');
-      expect(events).toEqual([{ type: 'open-requested' }, { type: 'opened' }]);
+      expect(events).toEqual([{ type: 'open-requested', via: 'toggle' }, { type: 'opened' }]);
     });
   });
 
@@ -80,7 +80,7 @@ describe('OverlayStateMachine', () => {
       expect(fsm.open()).toBe(true);
 
       expect(fsm.getState()).toBe('opening');
-      expect(events).toEqual([{ type: 'open-requested' }]);
+      expect(events).toEqual([{ type: 'open-requested', via: 'open' }]);
     });
 
     it('is not subject to the debounce window after a close', () => {
@@ -383,6 +383,6 @@ describe('OverlayStateMachine listener management', () => {
     fsm.toggle();
     off();
     fsm.commitOpened();
-    expect(received).toEqual([{ type: 'open-requested' }]);
+    expect(received).toEqual([{ type: 'open-requested', via: 'toggle' }]);
   });
 });
