@@ -74,7 +74,7 @@ GPL-3.0-or-later; read only).
 
 ### Before merge (verified outside the check command)
 
-- [ ] After `npm run dev`, with the indicator turned off, opening the
+- [x] After `npm run dev`, with the indicator turned off, opening the
       depth view, moving over a window and pressing the button closes the
       depth view with the window order unchanged and opens the
       preferences window; GNOME Shell's journal shows no error from zatto.
