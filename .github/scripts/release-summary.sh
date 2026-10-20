@@ -33,6 +33,13 @@ summary_placeholder_line() {
     printf '%s\n' '_Write the release summary here. It becomes the body of the GitHub Release.'
 }
 
+# How to fix a summary that summary_is_unwritten rejects, worded for both
+# ways it stays unwritten: the sentinel is still there, or it was deleted but
+# the placeholder sentence was kept. Shared by every check that reports it.
+unwritten_summary_fix() {
+    printf '%s\n' "Above the '$(changelog_marker)' marker in the PR body, replace the placeholder text (starting '$(summary_placeholder_line)') with a summary of what changed for users, and delete the '$(summary_sentinel)' comment if it is still there."
+}
+
 # The starting point for a summary nobody has written yet.
 summary_placeholder() {
     cat <<EOF

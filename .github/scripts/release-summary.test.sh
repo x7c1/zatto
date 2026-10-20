@@ -216,6 +216,10 @@ if out=$(bash "${SCRIPT_DIR}/validate-release-summary.sh" "$body_without_sentine
 else
     pass "validate-release-summary.sh rejects the placeholder without its sentinel"
 fi
+# The error must say what is still wrong when only the sentinel was deleted:
+# the placeholder text has to be replaced, not just the comment removed.
+assert_contains "the error for a kept placeholder says to replace the placeholder text" \
+    "$out" "::error::The release PR has no release summary. Above the '${MARKER}' marker in the PR body, replace the placeholder text (starting '_Write the release summary here. It becomes the body of the GitHub Release.') with a summary of what changed for users, and delete the '${SENTINEL}' comment if it is still there."
 
 if out=$(bash "${SCRIPT_DIR}/validate-release-summary.sh" "$(printf '\n\n%s\n\n## Features\n' "$MARKER")" 2>&1); then
     fail "validate-release-summary.sh rejects an empty summary" "  passed: ${out}"
