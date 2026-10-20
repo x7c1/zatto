@@ -84,12 +84,15 @@ export interface OverlayControllerOptions {
   readonly debounceMs?: number;
   /** Asked before each open; defaults to allowing every open. */
   readonly openGate?: OpenGatePort;
+  /** Opens the preferences window; see {@link OverlayController.openPreferences}. */
+  readonly openPreferences?: () => void;
 }
 
 export class OverlayController {
   private readonly fsm: OverlayStateMachine;
   private readonly epochNow: EpochClock;
   private readonly openGate: OpenGatePort | null;
+  private readonly openPreferencesWindow: (() => void) | null;
   private unsubscribeFsm: (() => void) | null = null;
   private lastEnterAt: number | null = null;
 
@@ -104,6 +107,7 @@ export class OverlayController {
     const debounceMs = options.debounceMs ?? HOTCORNER_DEBOUNCE_MS;
     this.epochNow = options.epochNow ?? (() => Date.now());
     this.openGate = options.openGate ?? null;
+    this.openPreferencesWindow = options.openPreferences ?? null;
     this.fsm = new OverlayStateMachine({ debounceMs, now: options.now });
   }
 
@@ -196,6 +200,20 @@ export class OverlayController {
    */
   open(): boolean {
     return this.fsm.open() && this.fsm.getState() === 'open';
+  }
+
+  /**
+   * Close the depth view as Esc does, raising nothing, then open the
+   * preferences window (the strip's preferences button). The close comes
+   * first so the modal grab is released before the window appears.
+   * Ignored unless the overlay is open; returns whether it was accepted.
+   */
+  openPreferences(): boolean {
+    if (!this.fsm.dismiss()) {
+      return false;
+    }
+    this.openPreferencesWindow?.();
+    return true;
   }
 
   /**
