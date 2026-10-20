@@ -87,7 +87,7 @@ closed without leaving it.
 
 ### Before merge (verified outside the check command)
 
-- [ ] `npm run dev` builds, installs and reloads the extension in the
+- [x] `npm run dev` builds, installs and reloads the extension in the
       running GNOME Shell session, the Inspect endpoint answers
       `GetState`, and GNOME Shell's journal shows no error or warning from
       zatto after the reload.
