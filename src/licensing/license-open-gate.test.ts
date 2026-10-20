@@ -127,7 +127,53 @@ describe('the locked notice', () => {
     s.hotCorner.fireEnter();
 
     expect(s.notice.shown).toHaveLength(2);
-    expect(s.notice.isLockedShown()).toBe(true);
+    expect(s.notice.lockedInTray()).not.toBeNull();
+  });
+
+  it('is shown again from the hot corner when the reason has changed since the one in the tray', () => {
+    const s = setup('trial-expired');
+    s.hotCorner.fireEnter();
+    s.advance(150);
+
+    s.license.setReason('offline-grace-exceeded');
+    s.hotCorner.fireEnter();
+
+    expect(s.controller.snapshot().overlay.state).toBe('closed');
+    expect(s.notice.shown).toHaveLength(2);
+    expect(s.notice.lockedInTray()).toEqual({
+      headline: 'This device has been offline for too long.',
+      instruction: 'Reconnect to the internet to continue.',
+      canOpenPreferences: false,
+    });
+  });
+
+  it('is not shown again from the hot corner when the one in the tray says the same', () => {
+    const s = setup('license-expired');
+    // A notice with the same text and offer, though not the very same object.
+    s.notice.showLocked({
+      headline: 'Your Zatto license has expired.',
+      instruction: 'Re-activate it to continue.',
+      canOpenPreferences: true,
+    });
+
+    s.hotCorner.fireEnter();
+
+    expect(s.controller.snapshot().overlay.state).toBe('closed');
+    expect(s.notice.shown).toHaveLength(1);
+  });
+
+  it('is shown again from the hot corner when only the offer to open the preferences differs', () => {
+    const s = setup('license-expired');
+    s.notice.showLocked({
+      headline: 'Your Zatto license has expired.',
+      instruction: 'Re-activate it to continue.',
+      canOpenPreferences: false,
+    });
+
+    s.hotCorner.fireEnter();
+
+    expect(s.notice.shown).toHaveLength(2);
+    expect(s.notice.lockedInTray()?.canOpenPreferences).toBe(true);
   });
 
   it('is shown on every request from the top bar menu, even while one is in the tray', () => {
