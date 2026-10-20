@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cycleFocus, focusWithin, windowsUnder } from './depth-cycle.js';
+import { cycleFocus, drawnFrame, focusWithin, windowsUnder } from './depth-cycle.js';
 import type { DepthViewLayout, Rect } from './depth-layout.js';
 
 function frame(x: number, y: number, width: number, height: number): Rect {
@@ -142,5 +142,23 @@ describe('focusWithin', () => {
       positions.push(focusWithin(group, focused));
     }
     expect(positions).toEqual([1, 2, 0]);
+  });
+});
+
+describe('drawnFrame', () => {
+  it('moves the frame by its offset, then scales and translates it', () => {
+    const layout = layoutOf(
+      [
+        [-20, -10],
+        [0, 0],
+      ],
+      { scale: 0.5, translationX: 30, translationY: 40 }
+    );
+    expect(drawnFrame(frame(100, 200, 400, 300), 0, layout)).toEqual({
+      x: 70,
+      y: 135,
+      width: 200,
+      height: 150,
+    });
   });
 });

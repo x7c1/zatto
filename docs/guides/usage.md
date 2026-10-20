@@ -55,6 +55,24 @@ The depth view is drawn in the work area:
   The focused window turns less translucent and comes to the front of the
   picture while nothing moves. A click or Enter raises it.
 
+## Closing a window
+
+The frontmost window carries a round close button at the top-right corner
+of its clone, as in the Activities Overview: the focused window while
+cycling, otherwise the window under the cursor. Over empty desktop with
+nothing focused there is no button; with a focus, the button stays on the
+focused window wherever the cursor is. It does not fade after a while.
+
+Clicking it asks the window to close and leaves the depth view open. Once
+the window is gone, its clone leaves the picture and the strip, the other
+clones stay where they are. If the window was focused, the focus moves to
+the window behind it among the windows it overlapped (the frontmost one if
+it was the deepest), if any; if nothing was focused, nothing is focused
+afterwards either, and the button goes to the window now under the cursor.
+A window that asks before closing (an unsaved document, for one)
+shows its dialog on its clone instead; click the clone to raise the dialog
+and answer it.
+
 ## The thumbnail strip
 
 Resting the cursor on a window shows it, and the windows overlapping it
@@ -72,13 +90,14 @@ focused one highlighted and titled.
 
 ## Dialogs
 
-A window's dialogs (such as a "Save changes?" prompt or a file chooser) are
-drawn with that window's clone, at their real offset from it, and move and
-fade with it. They are part of their parent, not windows of their own: they
-take no place in the depth order, are not a cycle step or a thumbnail of
-their own, and clicking one acts like clicking its parent. Raising a window
-that has a modal dialog activates the dialog, so the keyboard goes where it
-is expected.
+A window's dialogs (such as a "Save changes?" prompt or a file chooser),
+including those that open while the depth view is up, are drawn with that
+window's clone, at their real offset from it, and move and fade with it.
+They are part of their parent, not windows of their own: they take no place
+in the depth order, are not a cycle step or a thumbnail of their own, and
+clicking one acts like clicking its parent. Raising a window that has a
+modal dialog activates the dialog, so the keyboard goes where it is
+expected.
 
 ## License
 

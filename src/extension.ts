@@ -77,7 +77,8 @@ export default class ZattoExtension extends Extension {
     const windowMirror = new GnomeWindowMirror(
       () => actor.getCloneContainer(),
       cycleStrip,
-      new GLibTimeout()
+      new GLibTimeout(),
+      () => actor.getChromeContainer()
     );
     const realWindows = new GnomeRealWindows();
     this.realWindows = realWindows;

@@ -45,20 +45,37 @@ export function windowsUnder(
   frames: readonly Rect[],
   layout: DepthViewLayout
 ): number[] {
-  const { scale, translationX, translationY } = layout.container;
   const hits: number[] = [];
   frames.forEach((frame, i) => {
-    const offsetX = layout.clones[i]?.offsetX ?? 0;
-    const offsetY = layout.clones[i]?.offsetY ?? 0;
-    const left = (frame.x + offsetX) * scale + translationX;
-    const top = (frame.y + offsetY) * scale + translationY;
-    const right = left + frame.width * scale;
-    const bottom = top + frame.height * scale;
-    if (point.x >= left && point.x < right && point.y >= top && point.y < bottom) {
+    const drawn = drawnFrame(frame, i, layout);
+    if (
+      point.x >= drawn.x &&
+      point.x < drawn.x + drawn.width &&
+      point.y >= drawn.y &&
+      point.y < drawn.y + drawn.height
+    ) {
       hits.push(i);
     }
   });
   return hits;
+}
+
+/**
+ * Where `frame`, the frame rect of entry `index` of `layout`, is drawn in
+ * work-area coordinates once the layout is reached: moved by its clone's
+ * offset, then put through the container transform (scale about (0, 0),
+ * then translation).
+ */
+export function drawnFrame(frame: Rect, index: number, layout: DepthViewLayout): Rect {
+  const { scale, translationX, translationY } = layout.container;
+  const offsetX = layout.clones[index]?.offsetX ?? 0;
+  const offsetY = layout.clones[index]?.offsetY ?? 0;
+  return {
+    x: (frame.x + offsetX) * scale + translationX,
+    y: (frame.y + offsetY) * scale + translationY,
+    width: frame.width * scale,
+    height: frame.height * scale,
+  };
 }
 
 /**

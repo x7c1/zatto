@@ -296,6 +296,7 @@ export class CycleStrip {
       reactive: true,
       track_hover: true,
       can_focus: false,
+      accessible_name: 'Preferences',
       child: new St.Icon({
         icon_name: 'preferences-system-symbolic',
         icon_size: CYCLE_STRIP_TUNING.buttonIconSizePx,

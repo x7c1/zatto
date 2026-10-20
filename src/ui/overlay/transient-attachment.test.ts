@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { computeDepthLayout, DEPTH_VIEW_TUNING, type Rect } from './depth-layout.js';
 import {
   type AttachedGroup,
+  attachLateWindow,
   attachTransients,
   explainAttachment,
+  removalOf,
+  topmostModal,
   type WindowDescription,
   type WindowKind,
 } from './transient-attachment.js';
@@ -303,5 +306,76 @@ describe('attached transients and the depth layout', () => {
       attachTransients(withDialogs.map(({ desc }) => desc)).map((g) => g.transients.length)
     ).toEqual([1, 2, 0]);
     expect(layoutOf(withDialogs)).toEqual(layoutOf(parents));
+  });
+});
+
+describe('attachLateWindow', () => {
+  it('attaches a dialog created while open to its drawn parent, as at mount', () => {
+    const drawn = [win(1), win(2)];
+    const added = win(3, 'dialog', { transientFor: 1 });
+    expect(attachLateWindow(drawn, added)).toBe(1);
+    // The same rule as the mount: the window lands in its parent's group there too.
+    expect(byId([...drawn, added], attachTransients([...drawn, added]))[0]).toEqual({
+      parent: 1,
+      transients: [3],
+      activate: 1,
+    });
+  });
+
+  it('attaches a modal confirmation dialog to its parent', () => {
+    expect(attachLateWindow([win(1)], win(2, 'modal-dialog', { transientFor: 1 }))).toBe(1);
+  });
+
+  it('attaches a transient of an attached transient to the same root', () => {
+    const drawn = [win(1), win(2, 'dialog', { transientFor: 1 })];
+    expect(attachLateWindow(drawn, win(3, 'dialog', { transientFor: 2 }))).toBe(1);
+  });
+
+  it('does not add a window that would be a root of its own', () => {
+    expect(attachLateWindow([win(1)], win(2))).toBeNull();
+    expect(attachLateWindow([win(1)], win(2, 'dialog'))).toBeNull();
+  });
+
+  it('does not add a transient of a window that is not drawn', () => {
+    expect(attachLateWindow([win(1)], win(3, 'dialog', { transientFor: 9 }))).toBeNull();
+  });
+
+  it('does not add a window of a type that is not drawn, or one that is not visible', () => {
+    expect(attachLateWindow([win(1)], win(2, 'other', { transientFor: 1 }))).toBeNull();
+    expect(
+      attachLateWindow([win(1)], win(2, 'dialog', { transientFor: 1, minimized: true }))
+    ).toBeNull();
+    expect(
+      attachLateWindow([win(1)], win(2, 'dialog', { transientFor: 1, onCurrentWorkspace: false }))
+    ).toBeNull();
+  });
+});
+
+describe('topmostModal', () => {
+  it('picks the topmost modal dialog among the transients, or none', () => {
+    expect(topmostModal([win(2, 'dialog'), win(3, 'modal-dialog'), win(4, 'modal-dialog')])).toBe(
+      2
+    );
+    expect(topmostModal([win(2, 'dialog'), win(3, 'utility')])).toBeNull();
+    expect(topmostModal([])).toBeNull();
+  });
+});
+
+describe('removalOf', () => {
+  const groups = [
+    { root: 1, transients: [] },
+    { root: 2, transients: [5, 6] },
+  ];
+
+  it('drops the whole group when its root goes', () => {
+    expect(removalOf(groups, 2)).toEqual({ kind: 'group', group: 1 });
+  });
+
+  it('drops only the transient when a transient goes', () => {
+    expect(removalOf(groups, 6)).toEqual({ kind: 'transient', group: 1, transient: 1 });
+  });
+
+  it('drops nothing for a window that is not drawn', () => {
+    expect(removalOf(groups, 9)).toBeNull();
   });
 });
