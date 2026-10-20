@@ -36,7 +36,11 @@
 export type OverlayState = 'closed' | 'opening' | 'open' | 'closing';
 
 export type OverlayEvent =
-  | { type: 'open-requested' }
+  | {
+      type: 'open-requested';
+      /** Which call asked for the open: a {@link OverlayStateMachine.toggle} or an {@link OverlayStateMachine.open}. */
+      readonly via: 'toggle' | 'open';
+    }
   | { type: 'close-requested' }
   | { type: 'opened' }
   | { type: 'closed' };
@@ -92,7 +96,7 @@ export class OverlayStateMachine {
 
     if (this.state === 'closed') {
       this.state = 'opening';
-      this.emit({ type: 'open-requested' });
+      this.emit({ type: 'open-requested', via: 'toggle' });
       return true;
     }
     // state === 'open'
@@ -116,7 +120,7 @@ export class OverlayStateMachine {
     }
     this.lastAcceptedToggleMs = this.options.now();
     this.state = 'opening';
-    this.emit({ type: 'open-requested' });
+    this.emit({ type: 'open-requested', via: 'open' });
     return true;
   }
 

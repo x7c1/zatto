@@ -47,10 +47,25 @@ export class FakeLicense implements LicenseUsePort {
   }
 }
 
+/**
+ * A message tray that logs every notice shown to `shown`; the last one stays
+ * in the tray until {@link dismiss}.
+ */
 export class FakeLockedNotice implements LockedNoticePort {
   readonly shown: DisabledReasonDescription[] = [];
+  private inTray = false;
 
   showLocked(description: DisabledReasonDescription): void {
     this.shown.push(description);
+    this.inTray = true;
+  }
+
+  isLockedShown(): boolean {
+    return this.inTray;
+  }
+
+  /** Test helper: the notice leaves the tray, as the user dismissing it does. */
+  dismiss(): void {
+    this.inTray = false;
   }
 }

@@ -26,8 +26,13 @@ export interface LicenseUsePort {
 /** Tells the user why the depth view did not open. */
 export interface LockedNoticePort {
   /**
-   * Show why zatto is locked; when `description.canOpenPreferences`, offer
+   * Show why zatto is locked, replacing the previous notice; when `description.canOpenPreferences`, offer
    * to open the preferences, where a license can be activated.
    */
   showLocked(description: DisabledReasonDescription): void;
+  /**
+   * Whether the last notice {@link showLocked} showed is still in the
+   * message tray: neither dismissed by the user nor otherwise removed.
+   */
+  isLockedShown(): boolean;
 }

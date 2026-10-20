@@ -106,10 +106,14 @@ zatto starts with a trial and keeps running with a license key.
 zatto is locked when the trial has ended, when the license has expired or
 is no longer valid, or when a device with a license has been offline for
 more than 7 days. Opening the depth view then does nothing but show a
-notification that says why. Unless the cause is being offline (reconnect
-to the internet instead), its **Open Preferences** button opens the
-preferences on the **License** page, where a license key can be activated.
-Activating one unlocks zatto at once, without logging out.
+notification that says why. Opening it from the top bar indicator shows the
+notification every time. A hot corner shows it again only once the previous
+one has been dismissed from the message tray, so touching a corner by
+accident does not pop up a banner each time. Unless the cause is being
+offline (reconnect to the internet instead), the notification's **Open
+Preferences** button opens the preferences on the **License** page, where a
+license key can be activated. Activating one unlocks zatto at once,
+without logging out.
 
 ## Preferences
 

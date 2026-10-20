@@ -43,13 +43,20 @@ export interface HotCornerPort {
 }
 
 /**
+ * Where an open of the depth view came from: a hot-corner enter, which may
+ * be accidental, or an explicit request ({@link OverlayController.open},
+ * e.g. the top bar indicator's "Open Depth View").
+ */
+export type OpenSource = 'hot-corner' | 'request';
+
+/**
  * Decides whether an open of the depth view may go ahead. Asked once for
  * each open the controller accepts (a hot-corner enter while closed, or
  * {@link OverlayController.open}), before anything is shown; a `false`
  * leaves the overlay closed.
  */
 export interface OpenGatePort {
-  allowOpen(): boolean;
+  allowOpen(source: OpenSource): boolean;
 }
 
 /**

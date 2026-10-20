@@ -199,6 +199,16 @@ describe('OverlayController', () => {
       expect(realWindows.snapshot().hidden).toBe(false);
     });
 
+    it('tells the gate whether the hot corner or a request asked for the open', () => {
+      const openGate = { allowOpen: vi.fn(() => false) };
+      const { controller, hotCorner } = setup({ openGate });
+
+      hotCorner.fireEnter();
+      controller.open();
+
+      expect(openGate.allowOpen.mock.calls).toEqual([['hot-corner'], ['request']]);
+    });
+
     it('debounces hot-corner enters after a refusal', () => {
       const openGate = { allowOpen: vi.fn(() => false) };
       const { hotCorner, advance } = setup({ openGate, debounceMs: 100 });
