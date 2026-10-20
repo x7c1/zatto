@@ -47,7 +47,21 @@
  * click on its clone. When the strip appears and goes away is specified on
  * {@link WindowMirrorPort.hoverAt}.
  *
- * Four Mutter / Clutter API points this mirror sits on top of:
+ * Close button: a {@link DepthCloseButton} sits on the clone of the
+ * frontmost window, the one `depth-close.ts` picks from the focus and the
+ * pointer. Pressing it asks the window (and its attached transients) to
+ * close, as the Activities Overview does, and leaves the depth view open.
+ *
+ * Windows that come and go: the mirror watches every window it draws.
+ * When one goes, its clone is dropped (a root's group with every transient
+ * in it); the other clones stay where they are, the layout is not run
+ * again, and the focus moves on as `depth-close.ts` decides. A window
+ * created while the depth view is up (a "Save changes?" dialog the close
+ * button brought up, for one) is drawn on its parent's clone when
+ * `attachLateWindow()` attaches it, by the rule the mount uses. A window
+ * that would be a root of its own is not added.
+ *
+ * Mutter / Clutter API points this mirror sits on top of:
  *
  *   1. `global.get_window_actors()` — enumerate other apps' window actors.
  *   2. `meta_window.get_transient_for()` — the transient relation that
@@ -56,6 +70,10 @@
  *      our overlay's scene graph.
  *   4. `meta_window.activate(global.get_current_time())` — raise the
  *      mirrored window when its clone is clicked.
+ *   5. `meta_window.delete(global.get_current_time())` — ask a window to
+ *      close from the close button.
+ *   6. `display::window-created`, `meta_window::shown` and
+ *      `meta_window::unmanaged` — follow the windows that come and go.
  *
  * Eligibility: decided by `attachTransients()` over every window actor
  * with a meta window. The dimmer and the `HotCornerTrigger` are
@@ -71,8 +89,16 @@ import { shouldAnimate } from '../../libs/shell/animations.js';
 import { primaryWorkArea } from '../../libs/shell/work-area.js';
 import type { CycleStrip, CycleStripMember } from './cycle-strip.js';
 import {
+  closeButtonCarrier,
+  closeButtonRect,
+  focusAfterClose,
+  withoutIndex,
+} from './depth-close.js';
+import { DepthCloseButton } from './depth-close-button.js';
+import {
   type CycleDirection,
   cycleFocus,
+  drawnFrame,
   focusWithin,
   type Point,
   sameMembers,
@@ -94,8 +120,11 @@ import type {
 import { StripHoverGrace } from './strip-hover-grace.js';
 import {
   type AttachmentOutcome,
+  attachLateWindow,
   attachTransients,
   explainAttachment,
+  removalOf,
+  topmostModal,
   type WindowDescription,
   type WindowKind,
 } from './transient-attachment.js';
@@ -106,6 +135,7 @@ const EASE_MODE = Clutter.AnimationMode.EASE_OUT_QUAD;
 interface MountedTransient {
   readonly clone: Clutter.Clone;
   readonly win: Meta.Window;
+  readonly desc: WindowDescription;
   readonly clickHandlerId: number;
 }
 
@@ -122,8 +152,12 @@ interface MountedClone {
   readonly group: Clutter.Actor;
   readonly clone: Clutter.Clone;
   readonly win: Meta.Window;
-  /** The window to activate when this one is picked: its modal transient, if any. */
-  readonly activateWin: Meta.Window;
+  readonly desc: WindowDescription;
+  /**
+   * The window to activate when this one is picked: its topmost modal
+   * transient, if any. Follows the transients as they come and go.
+   */
+  activateWin: Meta.Window;
   /** Work-area-relative buffer rect at mount time; the close target fallback. */
   readonly rect: Rect;
   /** Work-area-relative frame rect at mount time; what the layout and hit-testing use. */
@@ -131,7 +165,8 @@ interface MountedClone {
   readonly clickHandlerId: number;
   /** The window actor the clone mirrors; the strip clones it too. */
   readonly source: Meta.WindowActor;
-  readonly transients: readonly MountedTransient[];
+  /** Bottom to top; a transient created while the overlay is open joins at the top. */
+  readonly transients: MountedTransient[];
 }
 
 export class GnomeWindowMirror implements WindowMirrorPort {
@@ -170,6 +205,18 @@ export class GnomeWindowMirror implements WindowMirrorPort {
   private generation = 0;
   /** Delays the strip's changes while it is shown; see {@link hoverAt}. */
   private readonly stripGrace: StripHoverGrace;
+  /** The close button on the frontmost window's clone. */
+  private readonly closeButton: DepthCloseButton;
+  /** Index into {@link clones} of the clone carrying the close button, or `null`. */
+  private buttonOn: number | null = null;
+  /** The last pointer position reported (stage coordinates), or `null` if unknown. */
+  private pointer: Point | null = null;
+  /** The `display::window-created` handler while clones are mounted. */
+  private windowCreatedId: number | null = null;
+  /** `shown` handlers of windows created while open that were not drawable yet. */
+  private pendingShown = new Map<Meta.Window, number>();
+  /** `unmanaged` handlers of the drawn windows, roots and transients. */
+  private goneHandlers = new Map<Meta.Window, number>();
 
   constructor(
     /**
@@ -182,8 +229,11 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     private readonly getContainer: () => St.Widget | null,
     /** The strip of thumbnails of the windows under the pointer. */
     private readonly strip: CycleStrip,
-    timeout: TimeoutPort
+    timeout: TimeoutPort,
+    /** Returns the overlay's chrome container, which hosts the close button. */
+    getChromeContainer: () => St.Widget | null
   ) {
+    this.closeButton = new DepthCloseButton(getChromeContainer, () => this.closeCarrier());
     this.stripGrace = new StripHoverGrace({
       graceMs: DEPTH_VIEW_TUNING.stripHoverGraceMs,
       timeout,
@@ -251,6 +301,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
           activate,
           actor,
           win,
+          desc: all[parent].desc,
           activateWin: all[activate].win,
           frame: this.frameRectOf(win),
           rect: this.bufferRectOf(win),
@@ -259,6 +310,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
               index: t,
               actor: all[t].actor,
               win: all[t].win,
+              desc: all[t].desc,
               rect: this.bufferRectOf(all[t].win),
             }))
             .filter(({ rect }) => isNonEmpty(rect)),
@@ -295,17 +347,11 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     container.set_scale(1, 1);
     container.set_translation(0, 0, 0);
 
-    entries.forEach(({ actor, win, activateWin, rect, frame, transients }, index) => {
+    entries.forEach(({ actor, win, desc, activateWin, rect, frame, transients }, index) => {
       // Clicks on the window's clone or on any of its transients' clones
       // pick this entry; the entry is looked up when the click arrives.
       let mounted: MountedClone | null = null;
-      const connectClick = (target: Clutter.Clone) =>
-        target.connect('button-press-event', () => {
-          if (mounted !== null) {
-            this.activateMounted(mounted);
-          }
-          return Clutter.EVENT_STOP;
-        });
+      const connectClick = (target: Clutter.Clone) => this.connectClick(target, () => mounted);
 
       // Until the entry is in `this.clones`, unmount cannot reach the group,
       // so a throw while building it must destroy the group here. Each clone
@@ -335,7 +381,12 @@ export class GnomeWindowMirror implements WindowMirrorPort {
           transientClone.set_position(transient.rect.x - rect.x, transient.rect.y - rect.y);
           transientClone.set_size(transient.rect.width, transient.rect.height);
           const transientHandlerId = connectClick(transientClone);
-          return { clone: transientClone, win: transient.win, clickHandlerId: transientHandlerId };
+          return {
+            clone: transientClone,
+            win: transient.win,
+            desc: transient.desc,
+            clickHandlerId: transientHandlerId,
+          };
         });
 
         container.add_child(group);
@@ -343,6 +394,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
           group,
           clone,
           win,
+          desc,
           activateWin,
           rect,
           frame,
@@ -355,6 +407,10 @@ export class GnomeWindowMirror implements WindowMirrorPort {
         throw e;
       }
       this.clones.push(mounted);
+      this.watchGone(mounted.win, mounted.desc.id);
+      for (const transient of mounted.transients) {
+        this.watchGone(transient.win, transient.desc.id);
+      }
 
       const placement = layout.clones[index];
       const target = {
@@ -387,6 +443,16 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       container.set_scale(scale, scale);
       container.set_translation(translationX, translationY, 0);
     }
+
+    // A mount that found no window is not torn down before the next one.
+    this.disconnectWindowCreated();
+    this.windowCreatedId = global.display.connect('window-created', (_display, win) =>
+      this.onWindowCreated(win)
+    );
+    // The button shows on the window under the pointer before it moves.
+    const [x, y] = global.get_pointer();
+    this.pointer = { x, y };
+    this.updateCloseButton();
 
     return this.clones.length > 0;
   }
@@ -457,6 +523,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     } else {
       this.showStrip(group);
     }
+    this.updateCloseButton();
   }
 
   hoverAt(point: Point): void {
@@ -464,6 +531,8 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     if (layout === null || this.clones.length === 0 || this.closing) {
       return;
     }
+    this.pointer = point;
+    this.updateCloseButton();
     // The strip is drawn over the clones, so a pointer on it is not on the
     // windows beneath it: keep the strip as it is, or it would be rebuilt
     // for those windows as the pointer reaches a thumbnail.
@@ -510,6 +579,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     const generation = ++this.generation;
     this.closing = true;
     this.hideStrip();
+    this.hideCloseButton();
     container.remove_all_transitions();
     for (const { group, transients } of this.clones) {
       group.remove_all_transitions();
@@ -579,6 +649,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       lastActivatedAt: this.lastActivatedAt,
       lastCycledAt: this.lastCycledAt,
       stripCount: this.strip.count,
+      closeButtonOn: this.buttonOn === null ? null : (this.clones[this.buttonOn]?.desc.id ?? null),
       windows: this.considered,
     };
   }
@@ -692,12 +763,16 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       container.set_scale(1, 1);
       container.set_translation(0, 0, 0);
     }
+    this.disconnectWindowCreated();
     for (const mounted of this.clones) {
       this.disposeClone(mounted);
     }
     this.clones = [];
     this.layout = null;
     this.focused = null;
+    this.buttonOn = null;
+    this.pointer = null;
+    this.closeButton.destroy();
     this.activatedGroup = null;
     this.closing = false;
     this.stripGrace.cancel();
@@ -787,17 +862,7 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       if (win === null) {
         continue;
       }
-      out.push({
-        actor,
-        win,
-        desc: {
-          id: win.get_stable_sequence(),
-          type: kindOf(win.get_window_type()),
-          transientFor: win.get_transient_for()?.get_stable_sequence() ?? null,
-          minimized: win.minimized,
-          onCurrentWorkspace: win.located_on_workspace(workspace),
-        },
-      });
+      out.push({ actor, win, desc: describeWindow(win, workspace) });
     }
     return out;
   }
@@ -810,15 +875,295 @@ export class GnomeWindowMirror implements WindowMirrorPort {
   private disposeClone(mounted: MountedClone): void {
     mounted.group.remove_all_transitions();
     mounted.clone.disconnect(mounted.clickHandlerId);
+    this.unwatchGone(mounted.win);
     for (const transient of mounted.transients) {
-      transient.clone.remove_all_transitions();
-      transient.clone.disconnect(transient.clickHandlerId);
+      this.disposeTransient(transient);
     }
     const parent = mounted.group.get_parent();
     if (parent !== null) {
       parent.remove_child(mounted.group);
     }
     mounted.group.destroy();
+  }
+
+  /**
+   * Connect a press on `target`, a clone in a group, to activating the
+   * group `mounted()` returns; the group is looked up when the press
+   * arrives.
+   */
+  private connectClick(target: Clutter.Clone, mounted: () => MountedClone | null): number {
+    return target.connect('button-press-event', () => {
+      const picked = mounted();
+      if (picked !== null) {
+        this.activateMounted(picked);
+      }
+      return Clutter.EVENT_STOP;
+    });
+  }
+
+  /** The windows drawn under the last pointer position: none on the strip, or before any. */
+  private windowsUnderPointer(layout: DepthViewLayout): number[] {
+    const pointer = this.pointer;
+    if (pointer === null || this.strip.covers(this.toWorkArea(pointer))) {
+      return [];
+    }
+    return this.groupAt(pointer, layout);
+  }
+
+  /** Put the close button on the window `closeButtonCarrier()` picks, or hide it. */
+  private updateCloseButton(): void {
+    const layout = this.layout;
+    const container = this.getContainer();
+    if (layout === null || container === null || this.closing || this.clones.length === 0) {
+      this.hideCloseButton();
+      return;
+    }
+    const pointer = this.pointer;
+    const onButton = pointer !== null && this.closeButton.covers(this.toWorkArea(pointer));
+    const carrier = closeButtonCarrier(
+      this.focused,
+      this.windowsUnderPointer(layout),
+      this.buttonOn,
+      onButton
+    );
+    if (carrier === this.buttonOn) {
+      return;
+    }
+    const mounted = carrier === null ? undefined : this.clones[carrier];
+    if (mounted === undefined) {
+      this.hideCloseButton();
+      return;
+    }
+    this.buttonOn = carrier;
+    const { frame, rect } = mounted;
+    this.closeButton.showOn({
+      group: mounted.group,
+      container,
+      frameInGroup: {
+        x: frame.x - rect.x,
+        y: frame.y - rect.y,
+        width: frame.width,
+        height: frame.height,
+      },
+    });
+  }
+
+  private hideCloseButton(): void {
+    this.buttonOn = null;
+    this.closeButton.hide();
+  }
+
+  /**
+   * The close button was pressed: ask its window to close, as the
+   * Activities Overview does, its attached transients first, topmost
+   * first. A window that asks before closing brings up a dialog instead,
+   * which {@link onWindowCreated} draws on its clone. The depth view stays
+   * open; {@link onWindowGone} drops the clone once the window goes.
+   */
+  private closeCarrier(): void {
+    const mounted = this.buttonOn === null ? undefined : this.clones[this.buttonOn];
+    if (this.closing || mounted === undefined) {
+      return;
+    }
+    const time = global.get_current_time();
+    for (const win of [...mounted.transients.map((t) => t.win).reverse(), mounted.win]) {
+      try {
+        win.delete(time);
+      } catch (e) {
+        console.warn(`[Zatto] GnomeWindowMirror: closing a window failed: ${e}`);
+      }
+    }
+  }
+
+  /** Call {@link onWindowGone} with `id` when `win` is unmanaged. */
+  private watchGone(win: Meta.Window, id: number): void {
+    this.unwatchGone(win);
+    this.goneHandlers.set(
+      win,
+      win.connect('unmanaged', () => this.onWindowGone(id))
+    );
+  }
+
+  private unwatchGone(win: Meta.Window): void {
+    const id = this.goneHandlers.get(win);
+    if (id !== undefined) {
+      win.disconnect(id);
+      this.goneHandlers.delete(win);
+    }
+  }
+
+  /** A drawn window went: drop what `removalOf()` says. */
+  private onWindowGone(id: number): void {
+    if (this.closing) {
+      // The clones are easing back; a clone whose source went paints
+      // nothing, and the teardown takes it.
+      return;
+    }
+    const removal = removalOf(
+      this.clones.map(({ desc, transients }) => ({
+        root: desc.id,
+        transients: transients.map((t) => t.desc.id),
+      })),
+      id
+    );
+    if (removal === null) {
+      return;
+    }
+    const mounted = this.clones[removal.group];
+    if (removal.kind === 'transient') {
+      const [transient] = mounted.transients.splice(removal.transient, 1);
+      this.disposeTransient(transient);
+      transient.clone.destroy();
+      mounted.activateWin = activationOf(mounted);
+      return;
+    }
+    this.removeGroup(removal.group);
+  }
+
+  /**
+   * Drop the group at `index`, its window gone: destroy it, keep every
+   * other clone where it is (the layout is not computed again), take the
+   * window out of the strip, and move the focus as `focusAfterClose()`
+   * decides.
+   */
+  private removeGroup(index: number): void {
+    const mounted = this.clones[index];
+    const layout = this.layout;
+    const container = this.getContainer();
+    if (mounted === undefined || layout === null) {
+      return;
+    }
+    const overlap = this.overlapOf(index, layout);
+    const nextFocus = focusAfterClose(index, this.focused, overlap);
+
+    this.hideCloseButton();
+    this.stripGrace.cancel();
+    if (this.activatedGroup === mounted.group) {
+      this.activatedGroup = null;
+    }
+    this.disposeClone(mounted);
+    this.clones.splice(index, 1);
+    const remaining: DepthViewLayout = {
+      clones: layout.clones.filter((_, i) => i !== index),
+      container: layout.container,
+    };
+    this.layout = remaining;
+    // The focus as it stands without the window; a focused clone that went
+    // was destroyed raised, so nothing needs to be put back.
+    this.focused = this.focused === null ? null : (withoutIndex([this.focused], index)[0] ?? null);
+
+    const shown = this.hoverGroup;
+    if (shown !== null) {
+      const kept = withoutIndex(shown, index);
+      if (kept.length === 0) {
+        this.hideStrip();
+      } else if (kept.length !== shown.length) {
+        // Rebuild without the window's thumbnail.
+        this.showStrip(kept);
+      } else {
+        this.hoverGroup = kept;
+      }
+    }
+
+    if (nextFocus !== null && nextFocus !== this.focused && container !== null) {
+      this.focusOn(nextFocus, withoutIndex(overlap, index), container, remaining);
+    }
+    this.updateCloseButton();
+  }
+
+  /**
+   * The windows drawn where the window at `index` was picked, before it
+   * goes: under the pointer when it is over that window, else under its
+   * close button's spot (a focused window may be closed while the pointer
+   * is elsewhere).
+   */
+  private overlapOf(index: number, layout: DepthViewLayout): number[] {
+    const underPointer = this.windowsUnderPointer(layout);
+    if (underPointer.includes(index) || this.focused !== index) {
+      return underPointer;
+    }
+    const frames = this.clones.map(({ frame }) => frame);
+    const button = closeButtonRect(drawnFrame(frames[index], index, layout), DEPTH_VIEW_TUNING);
+    return windowsUnder(
+      { x: button.x + button.width / 2, y: button.y + button.height / 2 },
+      frames,
+      layout
+    );
+  }
+
+  /**
+   * A window was created while the overlay is open: draw it on its
+   * parent's clone if `attachLateWindow()` attaches it there. One that
+   * has no window actor or no size yet is tried again once it is shown.
+   */
+  private onWindowCreated(win: Meta.Window): void {
+    if (this.closing || this.clones.length === 0) {
+      return;
+    }
+    const actor = win.get_compositor_private<Meta.WindowActor | null>();
+    const rect = this.bufferRectOf(win);
+    if (actor === null || !isNonEmpty(rect)) {
+      if (!this.pendingShown.has(win)) {
+        this.pendingShown.set(
+          win,
+          win.connect('shown', () => {
+            const id = this.pendingShown.get(win);
+            if (id !== undefined) {
+              win.disconnect(id);
+              this.pendingShown.delete(win);
+            }
+            this.onWindowCreated(win);
+          })
+        );
+      }
+      return;
+    }
+
+    const desc = describeWindow(win, global.workspace_manager.get_active_workspace());
+    const drawn = this.clones.flatMap((mounted) => [
+      mounted.desc,
+      ...mounted.transients.map((t) => t.desc),
+    ]);
+    const rootId = attachLateWindow(drawn, desc);
+    const mounted = this.clones.find((m) => m.desc.id === rootId);
+    if (rootId === null || mounted === undefined) {
+      return;
+    }
+
+    // Above the window's clone and its other transients, at its real
+    // offset from the window, as the mount places the ones present then.
+    const clone = new Clutter.Clone({ source: actor, reactive: true });
+    mounted.group.add_child(clone);
+    clone.set_position(rect.x - mounted.rect.x, rect.y - mounted.rect.y);
+    clone.set_size(rect.width, rect.height);
+    mounted.group.offscreen_redirect = Clutter.OffscreenRedirect.AUTOMATIC_FOR_OPACITY;
+    mounted.transients.push({
+      clone,
+      win,
+      desc,
+      clickHandlerId: this.connectClick(clone, () => mounted),
+    });
+    this.watchGone(win, desc.id);
+    mounted.activateWin = activationOf(mounted);
+  }
+
+  /** Stop following the windows created while open, pending ones included. */
+  private disconnectWindowCreated(): void {
+    if (this.windowCreatedId !== null) {
+      global.display.disconnect(this.windowCreatedId);
+      this.windowCreatedId = null;
+    }
+    for (const [win, id] of this.pendingShown) {
+      win.disconnect(id);
+    }
+    this.pendingShown.clear();
+  }
+
+  /** Disconnect a transient's handlers; its clone goes with its group, or is destroyed by the caller. */
+  private disposeTransient(transient: MountedTransient): void {
+    transient.clone.remove_all_transitions();
+    transient.clone.disconnect(transient.clickHandlerId);
+    this.unwatchGone(transient.win);
   }
 
   private activateWindow(win: Meta.Window): void {
@@ -829,6 +1174,23 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       console.warn(`[Zatto] GnomeWindowMirror.activate failed: ${e}`);
     }
   }
+}
+
+/** The window to activate when `mounted` is picked: its topmost modal transient, else itself. */
+function activationOf(mounted: MountedClone): Meta.Window {
+  const modal = topmostModal(mounted.transients.map(({ desc }) => desc));
+  return modal === null ? mounted.win : mounted.transients[modal].win;
+}
+
+/** `win` described for `attachTransients()`, against the active `workspace`. */
+function describeWindow(win: Meta.Window, workspace: Meta.Workspace): WindowDescription {
+  return {
+    id: win.get_stable_sequence(),
+    type: kindOf(win.get_window_type()),
+    transientFor: win.get_transient_for()?.get_stable_sequence() ?? null,
+    minimized: win.minimized,
+    onCurrentWorkspace: win.located_on_workspace(workspace),
+  };
 }
 
 function kindOf(type: Meta.WindowType): WindowKind {

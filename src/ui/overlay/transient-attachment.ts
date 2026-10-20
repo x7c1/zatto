@@ -128,11 +128,82 @@ export function attachTransients(windows: readonly WindowDescription[]): Attache
     }
     transients.sort((a, b) => a - b);
 
-    const modal = transients.filter((t) => windows[t].type === 'modal-dialog');
-    groups.push({ parent: index, transients, activate: modal.at(-1) ?? index });
+    const modal = topmostModal(transients.map((t) => windows[t]));
+    groups.push({
+      parent: index,
+      transients,
+      activate: modal === null ? index : transients[modal],
+    });
   });
 
   return groups;
+}
+
+/**
+ * The window to activate for a drawn window whose attached transients are
+ * `transients` (bottom to top): the topmost modal dialog among them, as a
+ * position in `transients`, or `null` for the window itself. The rule
+ * {@link attachTransients} applies at mount, for a group whose transients
+ * change while the depth view is open.
+ */
+export function topmostModal(transients: readonly WindowDescription[]): number | null {
+  for (let i = transients.length - 1; i >= 0; i--) {
+    if (transients[i].type === 'modal-dialog') {
+      return i;
+    }
+  }
+  return null;
+}
+
+/**
+ * The root a window created while the depth view is open is drawn with:
+ * the id of the drawn root window `added` is attached to, by the same rule
+ * {@link attachTransients} applies at mount, or `null` when it is not
+ * attached to any (it is not a transient of a drawn window, it is not of a
+ * drawn type, or it is not visible). `drawn` describes the windows drawn
+ * now, roots and attached transients, bottom to top; `added` is stacked
+ * above them. A window that would be a root of its own is not added: the
+ * depth view keeps the windows it opened with.
+ */
+export function attachLateWindow(
+  drawn: readonly WindowDescription[],
+  added: WindowDescription
+): number | null {
+  const windows = [...drawn, added];
+  const addedIndex = windows.length - 1;
+  const group = attachTransients(windows).find(({ transients }) => transients.includes(addedIndex));
+  return group === undefined ? null : windows[group.parent].id;
+}
+
+/** The ids of one drawn window and of the transients drawn with it. */
+export interface DrawnGroupIds {
+  readonly root: number;
+  readonly transients: readonly number[];
+}
+
+/**
+ * What to drop from the depth view when the window `id` goes: the whole
+ * group at `group` (its root went, and its transients go with it), the
+ * transient at position `transient` of that group, or nothing (`null`)
+ * when the window is not drawn.
+ */
+export type Removal =
+  | { readonly kind: 'group'; readonly group: number }
+  | { readonly kind: 'transient'; readonly group: number; readonly transient: number }
+  | null;
+
+/** See {@link Removal}. `groups` are the drawn groups in mount order. */
+export function removalOf(groups: readonly DrawnGroupIds[], id: number): Removal {
+  for (let group = 0; group < groups.length; group++) {
+    if (groups[group].root === id) {
+      return { kind: 'group', group };
+    }
+    const transient = groups[group].transients.indexOf(id);
+    if (transient !== -1) {
+      return { kind: 'transient', group, transient };
+    }
+  }
+  return null;
 }
 
 /**

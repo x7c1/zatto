@@ -183,6 +183,11 @@ export interface WindowMirrorSnapshot {
    */
   readonly stripCount: number;
   /**
+   * The id (`get_stable_sequence()`) of the window whose clone carries the
+   * close button, or `null` while no clone does.
+   */
+  readonly closeButtonOn: number | null;
+  /**
    * The windows the last `mount()` considered, bottom to top, each with
    * what became of it: drawn as a root, attached to one, or not drawn and
    * why. Empty before the first mount, and in release builds. Lets an
