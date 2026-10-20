@@ -12,7 +12,10 @@ import type { LockedNoticePort } from './ports.js';
 
 export class ShellNotifications implements NotificationService, LockedNoticePort {
   private source: MessageTray.Source | null = null;
-  private lockedNotice: MessageTray.Notification | null = null;
+  private lockedNotice: {
+    readonly notification: MessageTray.Notification;
+    readonly description: DisabledReasonDescription;
+  } | null = null;
 
   /** @param openPreferences Opens zatto's preferences window. */
   constructor(private readonly openPreferences: () => void) {}
@@ -48,7 +51,7 @@ export class ShellNotifications implements NotificationService, LockedNoticePort
    * previous one, so repeated attempts do not stack up in the tray.
    */
   showLocked(description: DisabledReasonDescription): void {
-    this.lockedNotice?.destroy(MessageTray.NotificationDestroyedReason.REPLACED);
+    this.lockedNotice?.notification.destroy(MessageTray.NotificationDestroyedReason.REPLACED);
     const notification = new MessageTray.Notification({
       source: this.getSource(),
       title: description.headline,
@@ -58,20 +61,21 @@ export class ShellNotifications implements NotificationService, LockedNoticePort
       this.offerPreferences(notification);
     }
     notification.connect('destroy', () => {
-      if (this.lockedNotice === notification) {
+      if (this.lockedNotice?.notification === notification) {
         this.lockedNotice = null;
       }
     });
-    this.lockedNotice = notification;
+    this.lockedNotice = { notification, description };
     this.notify(notification);
   }
 
   /**
-   * Whether the last locked notice is still in the tray. Dismissing a
-   * notification, or the source going, destroys it, which clears it here.
+   * What the last locked notice says, while it is still in the tray.
+   * Dismissing a notification, or the source going, destroys it, which
+   * clears it here.
    */
-  isLockedShown(): boolean {
-    return this.lockedNotice !== null;
+  lockedInTray(): DisabledReasonDescription | null {
+    return this.lockedNotice?.description ?? null;
   }
 
   /** Remove zatto's notifications and its source from the tray. */

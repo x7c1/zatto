@@ -31,8 +31,9 @@ export interface LockedNoticePort {
    */
   showLocked(description: DisabledReasonDescription): void;
   /**
-   * Whether the last notice {@link showLocked} showed is still in the
-   * message tray: neither dismissed by the user nor otherwise removed.
+   * The description of the last notice {@link showLocked} showed, while that
+   * notice is still in the message tray: neither dismissed by the user nor
+   * otherwise removed. `null` once it has left the tray.
    */
-  isLockedShown(): boolean;
+  lockedInTray(): DisabledReasonDescription | null;
 }

@@ -53,19 +53,19 @@ export class FakeLicense implements LicenseUsePort {
  */
 export class FakeLockedNotice implements LockedNoticePort {
   readonly shown: DisabledReasonDescription[] = [];
-  private inTray = false;
+  private inTray: DisabledReasonDescription | null = null;
 
   showLocked(description: DisabledReasonDescription): void {
     this.shown.push(description);
-    this.inTray = true;
+    this.inTray = description;
   }
 
-  isLockedShown(): boolean {
+  lockedInTray(): DisabledReasonDescription | null {
     return this.inTray;
   }
 
   /** Test helper: the notice leaves the tray, as the user dismissing it does. */
   dismiss(): void {
-    this.inTray = false;
+    this.inTray = null;
   }
 }
