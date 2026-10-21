@@ -11,44 +11,57 @@ import type { DepthViewLayout } from './depth-layout.js';
 
 describe('closeButtonCarrier', () => {
   it('puts the button on the focused window while it is under the pointer, drawn on top', () => {
-    expect(closeButtonCarrier(1, [0, 1, 2], null, false)).toBe(1);
+    expect(closeButtonCarrier(1, [0, 1, 2], null, 'elsewhere')).toBe(1);
   });
 
   it('moves the button from the focused window to the frontmost one under the pointer', () => {
-    expect(closeButtonCarrier(1, [0, 2], 1, false)).toBe(2);
+    expect(closeButtonCarrier(1, [0, 2], 1, 'elsewhere')).toBe(2);
   });
 
   it('keeps the button on the focused window while no window is under the pointer', () => {
-    expect(closeButtonCarrier(1, [], 2, false)).toBe(1);
+    expect(closeButtonCarrier(1, [], 2, 'elsewhere')).toBe(1);
   });
 
   it('puts the button on the frontmost window under the pointer when nothing is focused', () => {
-    expect(closeButtonCarrier(null, [0, 2, 3], null, false)).toBe(3);
+    expect(closeButtonCarrier(null, [0, 2, 3], null, 'elsewhere')).toBe(3);
   });
 
   it('puts the button on a window under the pointer that overlaps nothing', () => {
-    expect(closeButtonCarrier(null, [4], 1, false)).toBe(4);
+    expect(closeButtonCarrier(null, [4], 1, 'elsewhere')).toBe(4);
   });
 
   it('puts the button on no window when nothing is focused and no window is under the pointer', () => {
-    expect(closeButtonCarrier(null, [], null, false)).toBeNull();
-    expect(closeButtonCarrier(null, [], 2, false)).toBeNull();
+    expect(closeButtonCarrier(null, [], null, 'elsewhere')).toBeNull();
+    expect(closeButtonCarrier(null, [], 2, 'elsewhere')).toBeNull();
   });
 
   it('keeps the button where it is while the pointer is on it', () => {
     // The button reaches past its carrier 3 onto window 1, drawn behind it.
-    expect(closeButtonCarrier(null, [1], 3, true)).toBe(3);
+    expect(closeButtonCarrier(null, [1], 3, 'over')).toBe(3);
     // Also when another window is focused.
-    expect(closeButtonCarrier(0, [1], 3, true)).toBe(3);
+    expect(closeButtonCarrier(0, [1], 3, 'over')).toBe(3);
   });
 
   it('gives the button up where a window drawn in front of its carrier covers it', () => {
     // Window 3 is drawn in front of the carrier 1 and covers its button.
-    expect(closeButtonCarrier(null, [1, 3], 1, true)).toBe(3);
+    expect(closeButtonCarrier(null, [1, 3], 1, 'over')).toBe(3);
     // The focused window 0 is drawn on top of everything.
-    expect(closeButtonCarrier(0, [0, 1], 1, true)).toBe(0);
+    expect(closeButtonCarrier(0, [0, 1], 1, 'over')).toBe(0);
     // A focused carrier is not covered.
-    expect(closeButtonCarrier(1, [1, 3], 1, true)).toBe(1);
+    expect(closeButtonCarrier(1, [1, 3], 1, 'over')).toBe(1);
+  });
+
+  it('keeps the button on its carrier while it is held, wherever the pointer is', () => {
+    // The pointer moved onto window 3, drawn in front of the carrier 1.
+    expect(closeButtonCarrier(null, [1, 3], 1, 'holding')).toBe(1);
+    // The focus moved to window 0, and the pointer is over empty desktop.
+    expect(closeButtonCarrier(0, [], 1, 'holding')).toBe(1);
+    // The focused window 2 is under the pointer.
+    expect(closeButtonCarrier(2, [0, 2], 1, 'holding')).toBe(1);
+  });
+
+  it('follows the usual rules for a hold with no carrier', () => {
+    expect(closeButtonCarrier(null, [0, 2], null, 'holding')).toBe(2);
   });
 });
 

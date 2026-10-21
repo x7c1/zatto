@@ -1,5 +1,5 @@
 ---
-status: queued
+status: completed
 pipeline_phase: null
 plan: null
 base_ref: null
@@ -8,9 +8,9 @@ max_refine_rounds: 3
 retries_remaining: 1
 check_command: "npm run build && npm run check:strict && npm run test:run"
 assignee: null
-branch: null
+branch: task/1022-0222-close-button-on-release
 created_at: 2026-10-21T17:22:15Z
-updated_at: 2026-10-21T17:22:15Z
+updated_at: 2026-10-21T17:46:04Z
 ---
 
 # feat(overlay): close a window when the depth view's close button is released, as the Activities Overview does
@@ -31,10 +31,10 @@ The change:
 
 ### Automated (pipeline-verified)
 
-- [ ] The close button closes its window on `clicked`, not on `button-press-event`; no handler on the button runs the close on a press.
-- [ ] A press of a non-primary mouse button on the close button is stopped on the button.
-- [ ] While the button is held down, the mirror keeps the carrier unchanged; the logic that decides this is covered by a unit test if it lives in pure code.
+- [x] The close button closes its window on `clicked`, not on `button-press-event`; no handler on the button runs the close on a press.
+- [x] A press of a non-primary mouse button on the close button is stopped on the button.
+- [x] While the button is held down, the mirror keeps the carrier unchanged; the logic that decides this is covered by a unit test if it lives in pure code.
 
 ### Before merge (verified outside the check command)
 
-- [ ] After `npm run dev`: holding the primary button on the close button shows the theme's pressed background and does not close the window; releasing over the button closes it; pressing, moving off the button and releasing closes nothing and leaves the depth view open; a right-click on the button neither closes the window nor the depth view; GNOME Shell's journal shows no error from zatto.
+- [x] After `npm run dev`: holding the primary button on the close button shows the theme's pressed background and does not close the window; releasing over the button closes it; pressing, moving off the button and releasing closes nothing and leaves the depth view open; a right-click on the button neither closes the window nor the depth view; GNOME Shell's journal shows no error from zatto.
