@@ -7,7 +7,7 @@
  * only the shadow is zatto's (see `BUTTON_STYLE`).
  *
  * Owned by `GnomeWindowMirror`, which decides which clone carries it (see
- * `depth-close.ts`) and what a press does. It is parented to the clone
+ * `depth-close.ts`) and what a click does. It is parented to the clone
  * container, stacked directly above its clone's group, so a clone drawn
  * in front of that one covers it as it covers the clone; as a sibling of
  * the group, not its child, it keeps its own opacity, and it is scaled by
@@ -15,9 +15,23 @@
  * the clone through its eases: every change of the clone group's position
  * or of the clone container's scale or translation moves it.
  *
- * A press on it runs `onPress` and stops the event, so it neither reaches
- * the clone beneath nor counts as a press on nothing for the modal grab
- * (it is the press's target, not the overlay).
+ * It closes on release, as the Overview's does: St.Button's click gesture
+ * takes a primary press itself (it shows the theme's `:active` background
+ * while the held button is under the pointer, and follows the press
+ * wherever the pointer goes), and runs `onClick` on `clicked`, emitted
+ * when the button is released over it; released elsewhere, nothing runs.
+ * A press of another mouse button is stopped on the button and does
+ * nothing. Either way the press does not reach the clone beneath (whose
+ * press activates the window): the button is a sibling of the clone's
+ * group, not inside it, so the press does not pass through the clone. It
+ * does not count as a press on nothing for the modal grab either: the
+ * button is the press's event actor, not the overlay.
+ *
+ * While a primary press is held, {@link isHeld} is true, also while the
+ * pointer is off the button (where St.Button's `pressed` is false). The
+ * hold ends when the click gesture completes or is cancelled; `onRelease`
+ * then runs, after `onClick` when the release is a click, unless
+ * {@link hide} or {@link destroy} dropped the hold.
  */
 
 import Clutter from 'gi://Clutter';
@@ -53,11 +67,28 @@ export class DepthCloseButton {
   private attached: Attached | null = null;
   /** Where the button is drawn, relative to the work area. */
   private rect: Rect | null = null;
+  /** Whether a primary press on the button is held; see {@link isHeld}. */
+  private held = false;
 
   constructor(
-    /** Run when the button is pressed. */
-    private readonly onPress: () => void
+    private readonly callbacks: {
+      /** Run when the button is clicked: released over it after a primary press. */
+      readonly onClick: () => void;
+      /**
+       * Run when a hold on the button ends, wherever the pointer was
+       * released; after `onClick` when that release is a click.
+       */
+      readonly onRelease: () => void;
+    }
   ) {}
+
+  /**
+   * Whether the button is held down: a primary press on it not yet
+   * released, wherever the pointer has moved since.
+   */
+  isHeld(): boolean {
+    return this.held;
+  }
 
   /** Whether `point` (relative to the work area) lies on the shown button. */
   covers(point: Point): boolean {
@@ -111,10 +142,15 @@ export class DepthCloseButton {
     }
   }
 
-  /** Hide the button. Idempotent. */
+  /**
+   * Hide the button. Idempotent. A hold on it is dropped without a click
+   * and without `onRelease`.
+   */
   hide(): void {
     this.detach();
+    this.held = false;
     if (this.button !== null) {
+      this.button.fake_release();
       this.button.reactive = false;
       this.button.hide();
     }
@@ -123,6 +159,8 @@ export class DepthCloseButton {
   /** Destroy the button. Idempotent; it is created again on the next {@link showOn}. */
   destroy(): void {
     this.detach();
+    this.held = false;
+    this.button?.fake_release();
     this.button?.destroy();
     this.button = null;
   }
@@ -205,11 +243,40 @@ export class DepthCloseButton {
       visible: false,
     });
     button.cursor_type = Clutter.CursorType.POINTER;
-    button.connect('button-press-event', () => {
-      this.onPress();
-      return Clutter.EVENT_STOP;
+    // St.Button's `pressed` turns false while the held button is off the
+    // pointer, and a release there does not notify it, so the hold is read
+    // from its click gesture instead. The gesture sees an event before the
+    // button's own handlers do, and on a click it emits `clicked` before it
+    // notifies its state, so `onClick` runs before `onRelease`.
+    const gesture = button.get_actions().find((a) => a instanceof Clutter.ClickGesture) as
+      | Clutter.ClickGesture
+      | undefined;
+    if (gesture === undefined) {
+      console.warn('[Zatto] DepthCloseButton: St.Button has no click gesture');
+    }
+    button.connect('button-press-event', (_actor, event: Clutter.Event) => {
+      if (event.get_button() !== Clutter.BUTTON_PRIMARY) {
+        return Clutter.EVENT_STOP;
+      }
+      // The gesture may have turned the press down (another gesture is
+      // running); then nothing is held.
+      this.held = gesture !== undefined && isActive(gesture.state);
+      return Clutter.EVENT_PROPAGATE;
     });
+    gesture?.connect('notify::state', () => {
+      // hide() and destroy() drop the hold before they cancel the gesture.
+      if (this.held && !isActive(gesture.state)) {
+        this.held = false;
+        this.callbacks.onRelease();
+      }
+    });
+    button.connect('clicked', () => this.callbacks.onClick());
     this.button = button;
     return button;
   }
+}
+
+/** Whether a gesture in `state` is still following its press. */
+function isActive(state: Clutter.GestureState): boolean {
+  return state === Clutter.GestureState.POSSIBLE || state === Clutter.GestureState.RECOGNIZING;
 }

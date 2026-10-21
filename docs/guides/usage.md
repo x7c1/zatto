@@ -69,12 +69,17 @@ window it reaches past the top bar's edge. A window drawn in front of the
 one carrying the button covers the button as it covers that window. It
 does not fade after a while.
 
-Clicking it asks the window to close and leaves the depth view open. Once
-the window is gone, its clone leaves the picture and the strip, the other
-clones stay where they are. If the window was focused, the focus moves to
-the window behind it among the windows it overlapped (the frontmost one if
-it was the deepest), if any; if nothing was focused, nothing is focused
-afterwards either, and the button goes to the window now under the cursor.
+Clicking it asks the window to close and leaves the depth view open. As
+in the Activities Overview, the click counts when the primary (usually
+left) mouse button is released over the close button: while it is held,
+the close button stays on its window and shows as pressed while the
+pointer is on it, and releasing elsewhere cancels the close. Other mouse
+buttons do nothing on it. Once the window is gone, its clone leaves the
+picture and the strip, the other clones stay where they are. If the
+window was focused, the focus moves to the window behind it among the
+windows it overlapped (the frontmost one if it was the deepest), if any;
+if nothing was focused, nothing is focused afterwards either, and the
+button goes to the window now under the cursor.
 A window that asks before closing (an unsaved document, for one)
 shows its dialog on its clone instead; click the clone to raise the dialog
 and answer it.

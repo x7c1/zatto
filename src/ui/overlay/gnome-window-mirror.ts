@@ -49,8 +49,10 @@
  *
  * Close button: a {@link DepthCloseButton} sits on the clone of the
  * frontmost window, the one `depth-close.ts` picks from the focus and the
- * pointer. Pressing it asks the window (and its attached transients) to
- * close, as the Activities Overview does, and leaves the depth view open.
+ * pointer. Releasing it after a press on it asks the window (and its
+ * attached transients) to close, as the Activities Overview does, and
+ * leaves the depth view open. While it is held, it stays on its window;
+ * released, it follows the pointer again.
  *
  * Windows that come and go: the mirror watches every window it draws.
  * When one goes, its clone is dropped (a root's group with every transient
@@ -89,6 +91,7 @@ import { shouldAnimate } from '../../libs/shell/animations.js';
 import { primaryWorkArea } from '../../libs/shell/work-area.js';
 import type { CycleStrip, CycleStripMember } from './cycle-strip.js';
 import {
+  type ButtonPointer,
   closeButtonCarrier,
   closeButtonProbe,
   focusAfterClose,
@@ -231,7 +234,10 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     private readonly strip: CycleStrip,
     timeout: TimeoutPort
   ) {
-    this.closeButton = new DepthCloseButton(() => this.closeCarrier());
+    this.closeButton = new DepthCloseButton({
+      onClick: () => this.closeCarrier(),
+      onRelease: () => this.onCloseButtonReleased(),
+    });
     this.stripGrace = new StripHoverGrace({
       graceMs: DEPTH_VIEW_TUNING.stripHoverGraceMs,
       timeout,
@@ -917,12 +923,17 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       return;
     }
     const pointer = this.pointer;
-    const onButton = pointer !== null && this.closeButton.covers(this.toWorkArea(pointer));
+    let button: ButtonPointer = 'elsewhere';
+    if (this.closeButton.isHeld()) {
+      button = 'holding';
+    } else if (pointer !== null && this.closeButton.covers(this.toWorkArea(pointer))) {
+      button = 'over';
+    }
     const carrier = closeButtonCarrier(
       this.focused,
       this.windowsUnderPointer(layout),
       this.buttonOn,
-      onButton
+      button
     );
     if (carrier === this.buttonOn) {
       // A focus change may have restacked the groups around the carrier.
@@ -954,11 +965,27 @@ export class GnomeWindowMirror implements WindowMirrorPort {
   }
 
   /**
-   * The close button was pressed: ask its window to close, as the
-   * Activities Overview does, its attached transients first, topmost
-   * first. A window that asks before closing brings up a dialog instead,
-   * which {@link onWindowCreated} draws on its clone. The depth view stays
-   * open; {@link onWindowGone} drops the clone once the window goes.
+   * A hold on the close button ended: put the button where the pointer
+   * now says, read again for where it was released. This runs after a
+   * click's {@link closeCarrier} (see `DepthCloseButton`), so the click
+   * acts on the window the press was made on before the button can move.
+   */
+  private onCloseButtonReleased(): void {
+    if (this.layout === null || this.closing) {
+      return;
+    }
+    const [x, y] = global.get_pointer();
+    this.pointer = { x, y };
+    this.updateCloseButton();
+  }
+
+  /**
+   * The close button was clicked: ask the window it was pressed on, which
+   * still carries it, to close, as the Activities Overview does, its
+   * attached transients first, topmost first. A window that asks before
+   * closing brings up a dialog instead, which {@link onWindowCreated} draws
+   * on its clone. The depth view stays open; {@link onWindowGone} drops the
+   * clone once the window goes.
    */
   private closeCarrier(): void {
     const mounted = this.buttonOn === null ? undefined : this.clones[this.buttonOn];
@@ -1036,7 +1063,14 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     const overlap = this.overlapOf(index, layout);
     const nextFocus = focusAfterClose(index, this.focused, overlap);
 
-    this.hideCloseButton();
+    // A button held on another window stays there, so its release still
+    // acts on the window it was pressed on.
+    const keptOn = this.buttonOn;
+    if (this.closeButton.isHeld() && keptOn !== null && keptOn !== index) {
+      this.buttonOn = withoutIndex([keptOn], index)[0] ?? null;
+    } else {
+      this.hideCloseButton();
+    }
     this.stripGrace.cancel();
     if (this.activatedGroup === mounted.group) {
       this.activatedGroup = null;

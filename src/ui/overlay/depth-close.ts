@@ -17,6 +17,12 @@
  * Unlike the Overview's, the button does not fade after a while: it stays
  * until the frontmost window changes.
  *
+ * It closes its window when released over it, as the Overview's does.
+ * While it is held down it stays on its window whatever the pointer, the
+ * focus or the windows under the pointer do, so the release acts on the
+ * window the press was made on and the button does not move from under
+ * the pointer mid-click; once released, the rules above apply again.
+ *
  * Indices are into the mirror's clones, bottom to top, as in
  * `depth-cycle.ts`.
  *
@@ -40,25 +46,39 @@ export interface CloseButtonPlacement {
 }
 
 /**
+ * Where the pointer is relative to the close button: elsewhere, within
+ * its rect, or holding it down (wherever the pointer has moved since).
+ */
+export type ButtonPointer = 'elsewhere' | 'over' | 'holding';
+
+/**
  * The window that carries the close button, or `null` when none does.
  *
  * `focused` is the focused index or `null`; `under` the windows drawn
  * under the pointer ({@link windowsUnder} order, empty when the pointer is
  * over empty desktop, on the cycle strip or unknown). `current` is the
- * window that carries the button now and `onButton` whether the pointer is
- * within the button's rect: the button may reach past its carrier's frame
- * onto a window drawn behind it, and reaching for it must not move it to
- * that window. A window drawn in front of the carrier hides the button
- * where it covers it, as it hides the carrier, so the pointer there is on
- * that window.
+ * window that carries the button now and `button` where the pointer is
+ * relative to it. While the button is held, it stays on `current`. Over
+ * the button, it stays there too: the button may reach past its carrier's
+ * frame onto a window drawn behind it, and reaching for it must not move
+ * it to that window. A window drawn in front of the carrier hides the
+ * button where it covers it, as it hides the carrier, so the pointer
+ * there is on that window.
  */
 export function closeButtonCarrier(
   focused: number | null,
   under: readonly number[],
   current: number | null,
-  onButton: boolean
+  button: ButtonPointer
 ): number | null {
-  if (onButton && current !== null && !under.some((i) => drawnAbove(i, current, focused))) {
+  if (current !== null && button === 'holding') {
+    return current;
+  }
+  if (
+    current !== null &&
+    button === 'over' &&
+    !under.some((i) => drawnAbove(i, current, focused))
+  ) {
     return current;
   }
   if (focused !== null && under.includes(focused)) {
