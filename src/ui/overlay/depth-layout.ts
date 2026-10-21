@@ -79,15 +79,11 @@ export interface DepthViewTuning {
    */
   readonly stripHoverGraceMs: number;
   /**
-   * Diameter of the round close button on the frontmost window's clone, in
-   * px. Not an input to {@link computeDepthLayout}; see `depth-close.ts`.
-   */
-  readonly closeButtonSizePx: number;
-  /** Side of the icon inside the close button, in px. */
-  readonly closeButtonIconSizePx: number;
-  /**
-   * Distance from the close button to the top and right edges of the
-   * clone's visible (frame) rect, in px, so the button sits inside it.
+   * Distance from the close button on the frontmost window's clone to the
+   * top edge of the clone's visible (frame) rect and to the side edge of
+   * its corner, in px: positive puts the button inside the frame, negative
+   * that far past those edges. Not an input to {@link computeDepthLayout};
+   * see `depth-close.ts`.
    */
   readonly closeButtonInsetPx: number;
 }
@@ -100,9 +96,7 @@ export const DEPTH_VIEW_TUNING: DepthViewTuning = {
   transitionMs: 250,
   cycleMs: 150,
   stripHoverGraceMs: 50,
-  closeButtonSizePx: 28,
-  closeButtonIconSizePx: 16,
-  closeButtonInsetPx: 8,
+  closeButtonInsetPx: -8,
 };
 
 export interface Rect {

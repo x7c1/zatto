@@ -1,14 +1,19 @@
 /**
- * The depth view's close button: a round button with the stock
- * `window-close-symbolic` icon at the top-right corner of one clone, like
- * the one the Activities Overview shows on a window preview.
+ * The depth view's close button: the Activities Overview's close button
+ * for a window preview (the shell theme's `window-close` style class and
+ * the `preview-close-symbolic` icon), at a top corner of one clone as
+ * `closeButtonRect()` places it. The theme supplies its size, colours
+ * and hover and active states, so it follows the user's colour scheme;
+ * only the shadow is zatto's (see `BUTTON_STYLE`).
  *
  * Owned by `GnomeWindowMirror`, which decides which clone carries it (see
- * `depth-close.ts`) and what a press does. It is parented to the overlay's
- * chrome container, above the clones and outside their container
- * transform, so it keeps its size and opacity whatever the clone's. It
- * follows the clone through its eases: every change of the clone group's
- * position or of the clone container's scale or translation moves it.
+ * `depth-close.ts`) and what a press does. It is parented to the clone
+ * container, stacked directly above its clone's group, so a clone drawn
+ * in front of that one covers it as it covers the clone; as a sibling of
+ * the group, not its child, it keeps its own opacity, and it is scaled by
+ * the inverse of the container's scale, so it keeps its size. It follows
+ * the clone through its eases: every change of the clone group's position
+ * or of the clone container's scale or translation moves it.
  *
  * A press on it runs `onPress` and stops the event, so it neither reaches
  * the clone beneath nor counts as a press on nothing for the modal grab
@@ -16,15 +21,17 @@
  */
 
 import Clutter from 'gi://Clutter';
+import Meta from 'gi://Meta';
 import St from 'gi://St';
 import { closeButtonRect } from './depth-close.js';
 import type { Point } from './depth-cycle.js';
 import { DEPTH_VIEW_TUNING, type Rect } from './depth-layout.js';
 
-const BUTTON_STYLE_BASE = 'border-radius: 9999px; padding: 0;';
-const BUTTON_STYLE = `${BUTTON_STYLE_BASE} background-color: rgba(60, 60, 60, 0.9);`;
-const BUTTON_HOVER_STYLE = `${BUTTON_STYLE_BASE} background-color: rgba(90, 90, 90, 0.95);`;
-const ICON_STYLE = 'color: white;';
+/**
+ * A stronger shadow than the theme's, which is too faint to set the
+ * button apart from the window content it sits on.
+ */
+const BUTTON_STYLE = 'box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.6);';
 
 /** The clone the button sits on. */
 export interface CloseButtonTarget {
@@ -44,17 +51,15 @@ interface Attached {
 export class DepthCloseButton {
   private button: St.Button | null = null;
   private attached: Attached | null = null;
-  /** Where the button is drawn, relative to the chrome container. */
+  /** Where the button is drawn, relative to the work area. */
   private rect: Rect | null = null;
 
   constructor(
-    /** Returns the overlay's chrome container, or `null` while there is none. */
-    private readonly getContainer: () => St.Widget | null,
     /** Run when the button is pressed. */
     private readonly onPress: () => void
   ) {}
 
-  /** Whether `point` (relative to the chrome container) lies on the shown button. */
+  /** Whether `point` (relative to the work area) lies on the shown button. */
   covers(point: Point): boolean {
     const rect = this.rect;
     return (
@@ -70,8 +75,10 @@ export class DepthCloseButton {
   showOn(target: CloseButtonTarget): void {
     this.detach();
     const button = this.ensureButton();
-    if (button === null) {
-      return;
+    const parent = button.get_parent();
+    if (parent !== target.container) {
+      parent?.remove_child(button);
+      target.container.add_child(button);
     }
     const reposition = () => this.reposition();
     const handlers = [
@@ -85,9 +92,23 @@ export class DepthCloseButton {
       })),
     ];
     this.attached = { target, handlers };
+    this.restack();
     this.reposition();
     button.reactive = true;
     button.show();
+  }
+
+  /**
+   * Stack the button directly above its clone's group again. The mirror
+   * calls this whenever it restacks the groups, which would otherwise
+   * leave the button under a group raised above it or above one lowered.
+   */
+  restack(): void {
+    const button = this.button;
+    const target = this.attached?.target;
+    if (button !== null && target !== undefined && button.get_parent() === target.container) {
+      target.container.set_child_above_sibling(button, target.group);
+    }
   }
 
   /** Hide the button. Idempotent. */
@@ -115,6 +136,27 @@ export class DepthCloseButton {
     }
   }
 
+  /**
+   * Where the button would be drawn on a clone whose frame is drawn at
+   * `frame` (relative to the work area), or `null` while there is
+   * no button.
+   */
+  rectOn(frame: Rect): Rect | null {
+    const button = this.button;
+    if (button === null) {
+      return null;
+    }
+    // The theme sizes the button; its natural size is that once styled.
+    const [, , width, height] = button.get_preferred_size();
+    return closeButtonRect(frame, {
+      size: { width, height },
+      // Read on every placement, so a layout changed while zatto runs
+      // applies from the next depth view.
+      onLeft: Meta.prefs_get_button_layout().left_buttons.includes(Meta.ButtonFunction.CLOSE),
+      inset: DEPTH_VIEW_TUNING.closeButtonInsetPx,
+    });
+  }
+
   /** Put the button on the frame as the clone and its container are drawn now. */
   private reposition(): void {
     const button = this.button;
@@ -130,51 +172,43 @@ export class DepthCloseButton {
       width: frameInGroup.width * scale,
       height: frameInGroup.height * scale,
     };
-    const rect = closeButtonRect(frame, DEPTH_VIEW_TUNING);
+    const rect = this.rectOn(frame);
+    if (rect === null) {
+      return;
+    }
     this.rect = rect;
-    button.set_position(Math.round(rect.x), Math.round(rect.y));
+    // Into the container's coordinates, and scaled back to its natural size.
+    button.set_position(
+      Math.round((rect.x - container.translation_x) / scale),
+      Math.round((rect.y - container.translation_y) / scale)
+    );
+    button.set_scale(1 / scale, 1 / scale);
   }
 
   /**
-   * The button, created in the chrome container on first use, or `null`
-   * while there is no container. The mirror destroys it on every teardown,
-   * before the container can go, so a new mount creates a new one.
+   * The button, created on first use and parented by {@link showOn}. The
+   * mirror destroys it on every teardown, before the container can go, so
+   * a new mount creates a new one.
    */
-  private ensureButton(): St.Button | null {
+  private ensureButton(): St.Button {
     if (this.button !== null) {
       return this.button;
     }
-    const container = this.getContainer();
-    if (container === null) {
-      return null;
-    }
-    const size = DEPTH_VIEW_TUNING.closeButtonSizePx;
     const button = new St.Button({
+      style_class: 'window-close',
       style: BUTTON_STYLE,
+      icon_name: 'preview-close-symbolic',
       reactive: true,
       track_hover: true,
       can_focus: false,
       accessible_name: 'Close window',
       visible: false,
-      child: new St.Icon({
-        icon_name: 'window-close-symbolic',
-        icon_size: DEPTH_VIEW_TUNING.closeButtonIconSizePx,
-        style: ICON_STYLE,
-      }),
     });
-    button.set_size(size, size);
     button.cursor_type = Clutter.CursorType.POINTER;
-    // Inline styles have no :hover, so the hover background is swapped in.
-    button.connect('notify::hover', () => {
-      button.style = button.hover ? BUTTON_HOVER_STYLE : BUTTON_STYLE;
-    });
     button.connect('button-press-event', () => {
       this.onPress();
       return Clutter.EVENT_STOP;
     });
-    // At the bottom of the chrome container, so the cycle strip, when it
-    // is shown over the same spot, takes the press.
-    container.insert_child_at_index(button, 0);
     this.button = button;
     return button;
   }
