@@ -18,7 +18,7 @@
  * by absolute work-area-relative coordinates (see `gnome-window-mirror.ts`).
  * A second, untransformed container above it, returned by
  * {@link OverlayActor.getChromeContainer}, hosts the decorations drawn over
- * the clones (the cycle strip, see `cycle-strip.ts`, and the close button, see `depth-close-button.ts`).
+ * the clones (the cycle strip, see `cycle-strip.ts`).
  */
 
 import Clutter from 'gi://Clutter';

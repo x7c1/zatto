@@ -57,11 +57,17 @@ The depth view is drawn in the work area:
 
 ## Closing a window
 
-The frontmost window carries a round close button at the top-right corner
-of its clone, as in the Activities Overview: the focused window while
-cycling, otherwise the window under the cursor. Over empty desktop with
-nothing focused there is no button; with a focus, the button stays on the
-focused window wherever the cursor is. It does not fade after a while.
+The window drawn frontmost under the cursor carries the Activities
+Overview's close button; the focused window is drawn on top, so it carries
+the button wherever it is under the cursor. With no window under the cursor
+(empty desktop, the cycle strip), the focused window keeps the button, and
+with nothing focused there is none. The button is styled by the shell
+theme, with a stronger shadow, and stands slightly out of the top-right
+corner of the window's clone (the top-left one when the title bar's close
+button is on the left), over the window's own close button; on a maximized
+window it reaches past the top bar's edge. A window drawn in front of the
+one carrying the button covers the button as it covers that window. It
+does not fade after a while.
 
 Clicking it asks the window to close and leaves the depth view open. Once
 the window is gone, its clone leaves the picture and the strip, the other

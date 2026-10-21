@@ -90,7 +90,7 @@ import { primaryWorkArea } from '../../libs/shell/work-area.js';
 import type { CycleStrip, CycleStripMember } from './cycle-strip.js';
 import {
   closeButtonCarrier,
-  closeButtonRect,
+  closeButtonProbe,
   focusAfterClose,
   withoutIndex,
 } from './depth-close.js';
@@ -229,11 +229,9 @@ export class GnomeWindowMirror implements WindowMirrorPort {
     private readonly getContainer: () => St.Widget | null,
     /** The strip of thumbnails of the windows under the pointer. */
     private readonly strip: CycleStrip,
-    timeout: TimeoutPort,
-    /** Returns the overlay's chrome container, which hosts the close button. */
-    getChromeContainer: () => St.Widget | null
+    timeout: TimeoutPort
   ) {
-    this.closeButton = new DepthCloseButton(getChromeContainer, () => this.closeCarrier());
+    this.closeButton = new DepthCloseButton(() => this.closeCarrier());
     this.stripGrace = new StripHoverGrace({
       graceMs: DEPTH_VIEW_TUNING.stripHoverGraceMs,
       timeout,
@@ -927,6 +925,8 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       onButton
     );
     if (carrier === this.buttonOn) {
+      // A focus change may have restacked the groups around the carrier.
+      this.closeButton.restack();
       return;
     }
     const mounted = carrier === null ? undefined : this.clones[carrier];
@@ -1074,8 +1074,10 @@ export class GnomeWindowMirror implements WindowMirrorPort {
   /**
    * The windows drawn where the window at `index` was picked, before it
    * goes: under the pointer when it is over that window, else under its
-   * close button's spot (a focused window may be closed while the pointer
-   * is elsewhere).
+   * close button's spot, moved into the window's frame by
+   * `closeButtonProbe()` (a focused window may be closed while the pointer
+   * is elsewhere, and on a frame smaller than the button its centre lies
+   * outside the frame).
    */
   private overlapOf(index: number, layout: DepthViewLayout): number[] {
     const underPointer = this.windowsUnderPointer(layout);
@@ -1083,12 +1085,10 @@ export class GnomeWindowMirror implements WindowMirrorPort {
       return underPointer;
     }
     const frames = this.clones.map(({ frame }) => frame);
-    const button = closeButtonRect(drawnFrame(frames[index], index, layout), DEPTH_VIEW_TUNING);
-    return windowsUnder(
-      { x: button.x + button.width / 2, y: button.y + button.height / 2 },
-      frames,
-      layout
-    );
+    const drawn = drawnFrame(frames[index], index, layout);
+    // Without a button (none was ever created), the frame's centre.
+    const button = this.closeButton.rectOn(drawn) ?? drawn;
+    return windowsUnder(closeButtonProbe(button, drawn), frames, layout);
   }
 
   /**
