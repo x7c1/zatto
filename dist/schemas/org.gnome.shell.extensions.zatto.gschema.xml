@@ -39,7 +39,7 @@
     <key name="last-online-at" type="x">
       <default>0</default>
       <summary>Last online</summary>
-      <description>Last time the device was online, in Unix seconds; 0 means not recorded. A valid license keeps working offline for 7 days from it. Managed by zatto.</description>
+      <description>Last time the device was online, in Unix seconds; 0 means not recorded. A valid license, and an ended trial that zatto still opens, keep working offline for 7 days from it. Managed by zatto.</description>
     </key>
     <key name="trial-days-used" type="i">
       <default>0</default>
@@ -59,7 +59,12 @@
     <key name="trial-probe-result" type="s">
       <default>'none'</default>
       <summary>Trial probe result</summary>
-      <description>Whether the license API answered the check made after the trial ended: 'none', 'answered' or 'no-response'. Managed by zatto.</description>
+      <description>Whether the license API answered the most recent check, made once the trial has ended or a warning that it ends soon is due: 'none' (no check yet), 'answered' or 'no-response'. Managed by zatto.</description>
+    </key>
+    <key name="trial-probed-at" type="x">
+      <default>0</default>
+      <summary>Trial probe time</summary>
+      <description>Time of the most recent check of the license API, in Unix seconds; 0 means none yet. Managed by zatto.</description>
     </key>
   </schema>
 </schemalist>

@@ -25,15 +25,16 @@ export function createLicensePage(
  * (the trial's warning, a refused open) offer the preferences, and should
  * land where a license key is entered. True once the trial has warned that
  * it ends soon, and while an ended trial, an expired license or an invalid
- * one locks zatto. An ended trial that the license server no longer answers
- * for does not lock zatto, and does not count.
+ * one locks zatto. An ended trial locks zatto only when the most recent probe
+ * of the license server got an answer; with no response, or no probe yet, it
+ * does not lock zatto, and does not count.
  */
 export function licenseNeedsAttention(settings: Gio.Settings): boolean {
   switch (settings.get_string('license-status')) {
     case 'trial':
       return settings.get_int('trial-warning-last-threshold') > 0;
     case 'trial-expired':
-      return settings.get_string('trial-probe-result') !== 'no-response';
+      return settings.get_string('trial-probe-result') === 'answered';
     case 'expired':
     case 'invalid':
       return true;
