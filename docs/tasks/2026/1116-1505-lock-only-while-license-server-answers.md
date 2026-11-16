@@ -106,7 +106,7 @@ for a user who used up the trial before it started).
 
 ### Before merge (verified outside the check command)
 
-- [ ] On a real GNOME Shell session (Ubuntu 26.04, Wayland), with a build
+- [x] On a real GNOME Shell session (Ubuntu 26.04, Wayland), with a build
       that points at the default `https://license.invalid`, the extension
       enables after the upgrade without the Shell aborting, and an ended
       trial (set with `gsettings` to 30 days used, a past
