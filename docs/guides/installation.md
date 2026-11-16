@@ -47,8 +47,9 @@ gh auth refresh -s read:packages
 
 The license API's base URL is set at build time from the
 `LICENSE_API_BASE_URL` environment variable; without it, the build points
-at `https://license.invalid`, which never answers, so nothing is locked
-(see [License](usage.md#license)).
+at `https://license.invalid`, which never answers, so no trial warning is
+shown and an ended trial is not locked, except after more than 7 days
+offline (see [License](usage.md#license)).
 
 To run zatto from a working tree instead of a release, install it once:
 
