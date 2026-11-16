@@ -31,19 +31,19 @@ describe('licenseNeedsAttention', () => {
     ).toBe(true);
   });
 
-  it.each([
-    'none',
-    'answered',
-  ])('is true for an ended trial with probe result %s', (probeResult) => {
-    expect(licenseNeedsAttention(settingsWith({ status: 'trial-expired', probeResult }))).toBe(
-      true
-    );
+  it('is true for an ended trial whose most recent probe got an answer', () => {
+    expect(
+      licenseNeedsAttention(settingsWith({ status: 'trial-expired', probeResult: 'answered' }))
+    ).toBe(true);
   });
 
-  it('is false for an ended trial that the license server no longer answers for', () => {
-    expect(
-      licenseNeedsAttention(settingsWith({ status: 'trial-expired', probeResult: 'no-response' }))
-    ).toBe(false);
+  it.each([
+    'none',
+    'no-response',
+  ])('is false for an ended trial with probe result %s', (probeResult) => {
+    expect(licenseNeedsAttention(settingsWith({ status: 'trial-expired', probeResult }))).toBe(
+      false
+    );
   });
 
   it.each(['expired', 'invalid'])('is true for a %s license', (status) => {

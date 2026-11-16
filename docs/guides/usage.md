@@ -116,34 +116,42 @@ zatto starts with a trial and keeps running with a license key.
 
 - **Trial** — The trial lasts 30 days of use. A day of use is a day on
   which you open the depth view (from a hot corner or the top bar menu); it
-  counts once, the first time that day. A notification warns you when 3
-  days and when 1 day are left; its **Open Preferences** button opens the
-  **License** page.
+  counts once, the first time that day. The 30th day is usable; the trial
+  ends when you open the depth view on a 31st day. While the license server
+  answers, a notification warns you when 3 days and when 1 day are left;
+  its **Open Preferences** button opens the **License** page.
 - **License key** — Activate a license key on the **License** page of the
   [preferences](#preferences). The page shows the license status and
   checks the key with the license server.
-- **Offline** — An activated license keeps working offline for 7 days from
-  the last time the device was online.
+- **Offline** — An activated license, and an ended trial that zatto still
+  opens, keep working offline for 7 days from the last time the device was
+  online.
 - **No answer, no lock** — Only an answer from the license server can
   expire or invalidate a license. When it does not answer (it is down,
-  unreachable, or retired), zatto keeps the status it had. Once the trial
-  has ended, zatto asks the license server whether it is still there the
-  next time it starts (for example when you log in) while the device is
-  online, and unlocks if the server no longer answers.
+  unreachable, or retired), zatto keeps the status it had. The trial's
+  warnings, and the lock once the trial has ended, come only while the
+  license server answers: when it did not answer the last time zatto asked,
+  or zatto has not asked yet, zatto opens and shows no warning. Once the
+  trial has ended or is about to end, zatto asks the license server in the
+  background when it starts, when you open the depth view, and when the
+  network comes back, no more than once every 30 minutes. Opening the depth
+  view never waits for the answer; it follows the last answer zatto got.
 
 ### When zatto is locked
 
-zatto is locked when the trial has ended, when the license has expired or
-is no longer valid, or when a device with a license has been offline for
-more than 7 days. Opening the depth view then does nothing but show a
-notification that says why. Opening it from the top bar indicator shows the
-notification every time. A hot corner shows it again only once the previous
-one has been dismissed from the message tray, or when the cause has changed
-since, so touching a corner by accident does not pop up a banner each time.
-Unless the cause is being offline (reconnect to the internet instead), the
-notification's **Open Preferences** button opens the preferences on the
-**License** page, where a license key can be activated. Activating one
-unlocks zatto at once, without logging out.
+zatto is locked when the trial has ended and the license server answered
+the last time zatto asked, when the license has expired or is no longer
+valid, or when a device with a license, or with an ended trial that zatto
+still opens, has been offline for more than 7 days. Opening the depth
+view then does nothing but show a notification that says why. Opening it
+from the top bar indicator shows the notification every time. A hot corner
+shows it again only once the previous one has been dismissed from the
+message tray, or when the cause has changed since, so touching a corner by
+accident does not pop up a banner each time. Unless the cause is being
+offline (reconnect to the internet instead), the notification's **Open
+Preferences** button opens the preferences on the **License** page, where a
+license key can be activated. Activating one unlocks zatto at once, without
+logging out.
 
 ## Preferences
 
