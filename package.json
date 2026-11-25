@@ -43,7 +43,7 @@
     "@girs/meta-18": "4.9.0",
     "@girs/mtk-18": "4.9.0",
     "@girs/st-18": "4.9.0",
-    "esbuild": "^0.27.0",
+    "esbuild": "^0.28.2",
     "typescript": "^5.9.3",
     "vitest": "^5.1.0"
   },
