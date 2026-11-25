@@ -33,3 +33,10 @@ updates:
       # @haco-studio/* comes from GitHub Packages, which Dependabot cannot read
       # without a registry secret, so it is bumped by hand.
       - dependency-name: "@haco-studio/*"
+      # The @girs/* major follows the GNOME Shell version the extension
+      # targets (shell-version in dist/metadata.json): types for a newer Shell
+      # let calls to APIs missing from the targeted one compile. So a major
+      # update is made by hand, in the change that moves shell-version. Not a
+      # versions range: @girs/gnome-shell is numbered after the Shell itself.
+      - dependency-name: "@girs/*"
+        update-types: ["version-update:semver-major"]
