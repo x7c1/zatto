@@ -45,7 +45,7 @@ const RECOVERY_HINT =
 /**
  * GNOME Shell's `ExtensionState.ACTIVE`, spelled as a literal so this file
  * stays free of `resource://*` imports. Do not switch to the `@girs` enum:
- * `@girs/gnome-shell` 50.0.0 still names the member `ENABLED`, which is
+ * `@girs/gnome-shell` 50.0.4 still names the member `ENABLED`, which is
  * `undefined` on the Shell 50 runtime object (where it is `ACTIVE`). Both
  * are 1.
  */
