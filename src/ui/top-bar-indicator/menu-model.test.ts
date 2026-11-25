@@ -74,21 +74,18 @@ describe('buildIndicatorMenu', () => {
     expect(menu.at(-1)).toEqual({ kind: 'status', label });
   });
 
-  it.each([
-    'trial',
-    'trial-expired',
-    'valid',
-    'expired',
-    'invalid',
-  ] as const)('offers nothing to purchase a license when the status is %s', (status) => {
-    const { menu } = setup(licenseState({ status }));
+  it.each(['trial', 'trial-expired', 'valid', 'expired', 'invalid'] as const)(
+    'offers nothing to purchase a license when the status is %s',
+    (status) => {
+      const { menu } = setup(licenseState({ status }));
 
-    expect(labels(menu).filter((label) => /purchase/i.test(label))).toEqual([]);
-    expect(menu.filter((entry) => entry.kind === 'item').map((entry) => entry.label)).toEqual([
-      'Open Depth View',
-      'Preferences…',
-    ]);
-  });
+      expect(labels(menu).filter((label) => /purchase/i.test(label))).toEqual([]);
+      expect(menu.filter((entry) => entry.kind === 'item').map((entry) => entry.label)).toEqual([
+        'Open Depth View',
+        'Preferences…',
+      ]);
+    }
+  );
 
   it('leaves the status row out when there is no license state', () => {
     const { menu } = setup(null);

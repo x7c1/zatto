@@ -155,17 +155,16 @@ describe('attachTransients', () => {
     ]);
   });
 
-  it.each([
-    'dialog',
-    'modal-dialog',
-    'utility',
-  ] as const)('draws a %s without a transient parent as a root', (type) => {
-    const windows = [win(1), win(2, type)];
-    expect(byId(windows, attachTransients(windows))).toEqual([
-      { parent: 1, transients: [], activate: 1 },
-      { parent: 2, transients: [], activate: 2 },
-    ]);
-  });
+  it.each(['dialog', 'modal-dialog', 'utility'] as const)(
+    'draws a %s without a transient parent as a root',
+    (type) => {
+      const windows = [win(1), win(2, type)];
+      expect(byId(windows, attachTransients(windows))).toEqual([
+        { parent: 1, transients: [], activate: 1 },
+        { parent: 2, transients: [], activate: 2 },
+      ]);
+    }
+  );
 
   it('draws a dialog whose transient parent is not described as a root', () => {
     const windows = [win(1, 'dialog', { transientFor: 99 })];
