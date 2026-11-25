@@ -37,14 +37,14 @@ describe('licenseNeedsAttention', () => {
     ).toBe(true);
   });
 
-  it.each([
-    'none',
-    'no-response',
-  ])('is false for an ended trial with probe result %s', (probeResult) => {
-    expect(licenseNeedsAttention(settingsWith({ status: 'trial-expired', probeResult }))).toBe(
-      false
-    );
-  });
+  it.each(['none', 'no-response'])(
+    'is false for an ended trial with probe result %s',
+    (probeResult) => {
+      expect(licenseNeedsAttention(settingsWith({ status: 'trial-expired', probeResult }))).toBe(
+        false
+      );
+    }
+  );
 
   it.each(['expired', 'invalid'])('is true for a %s license', (status) => {
     expect(licenseNeedsAttention(settingsWith({ status }))).toBe(true);
